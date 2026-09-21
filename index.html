@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="style.css">
 <title>Sistema OmniLab</title>
 
-
+<!-- ===== FIREBASE SDK E CONFIGURAÇÃO ÚNICA ===== -->
 <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
       import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
@@ -34,7 +34,7 @@
       window.db = db;
       window.fs = { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch };
 
-      // Funções assíncronas
+      // Funções assíncronas do Firestore
       window.salvarPacienteAsync = async function(paciente) {
         const ref = doc(db, "pacientes", String(paciente.id));
         await setDoc(ref, paciente, { merge: true });
@@ -114,7 +114,7 @@
       };
 
       window.migrarLocalStorageParaFirestore();
-    </script>
+</script>
     
 </head>
 <body>
@@ -444,131 +444,13 @@
   </div>
 </div>
 
-<!-- ===== FIREBASE SDK (MODULE) E LÓGICA DE MIGRAÇÃO ===== -->
-<script type="module">
-  // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyA_dIav9z30uw1oigo_5XoQL2TH2CiWdMA",
-  authDomain: "omni-ef6b1.firebaseapp.com",
-  projectId: "omni-ef6b1",
-  storageBucket: "omni-ef6b1.firebasestorage.app",
-  messagingSenderId: "6821845887",
-  appId: "1:6821845887:web:ca11e04648a4dfb349184a",
-  measurementId: "G-B1S3WMX37D"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-  window.db = db;
-  window.auth = auth;
-  window.fs = { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch };
-
-  // Função de migração automática do LocalStorage para Firestore
-  window.migrarLocalStorageParaFirestore = async function() {
-    if (localStorage.getItem("omnilab_firebase_migrado")) return;
-
-    try {
-      const batch = writeBatch(db);
-
-      // Migrar catálogo
-      const catalogoLocal = JSON.parse(localStorage.getItem("omnilab_catalogo") || "[]");
-      catalogoLocal.forEach(exame => {
-        const ref = doc(db, "catalogo", String(exame.id));
-        batch.set(ref, exame);
-      });
-
-      // Migrar pacientes
-      const pacientesLocais = JSON.parse(localStorage.getItem("omnilab_pacientes") || "[]");
-      pacientesLocais.forEach(paciente => {
-        const ref = doc(db, "pacientes", String(paciente.id));
-        batch.set(ref, paciente);
-      });
-
-      // Migrar visitas
-      const visitasLocais = JSON.parse(localStorage.getItem("omnilab_visitas") || "[]");
-      visitasLocais.forEach(visita => {
-        const ref = doc(db, "visitas", String(visita.id));
-        batch.set(ref, visita);
-      });
-
-      await batch.commit();
-      localStorage.setItem("omnilab_firebase_migrado", "1");
-      console.log("Migração para o Firebase realizada com sucesso!");
-    } catch(e) {
-      console.error("Erro na migração para o Firebase:", e);
-    }
-  };
-
-  // Funções assíncronas do Firestore
-  window.listarPacientesAsync = async function() {
-    const snap = await getDocs(collection(db, "pacientes"));
-    const lista = [];
-    snap.forEach(d => lista.push(d.data()));
-    return lista;
-  };
-
-  window.salvarPacienteAsync = async function(paciente) {
-    const ref = doc(db, "pacientes", String(paciente.id));
-    await setDoc(ref, paciente, { merge: true });
-  };
-
-  window.listarVisitasAsync = async function() {
-    const snap = await getDocs(collection(db, "visitas"));
-    const lista = [];
-    snap.forEach(d => {
-      const v = d.data();
-      if(!v.status) v.status = "criado";
-      if(!v.itens) v.itens = [];
-      lista.push(v);
-    });
-    return lista;
-  };
-
-  window.salvarVisitaAsync = async function(visita) {
-    const ref = doc(db, "visitas", String(visita.id));
-    await setDoc(ref, visita, { merge: true });
-  };
-
-  window.excluirVisitaAsync = async function(id) {
-    await deleteDoc(doc(db, "visitas", String(id)));
-  };
-
-  window.listarCatalogoAsync = async function() {
-    const snap = await getDocs(collection(db, "catalogo"));
-    const lista = [];
-    snap.forEach(d => lista.push(d.data()));
-    return lista.sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  };
-
-  window.salvarExameCatalogoAsync = async function(exame) {
-    const ref = doc(db, "catalogo", String(exame.id));
-    await setDoc(ref, exame, { merge: true });
-  };
-
-  window.excluirExameCatalogoAsync = async function(id) {
-    await deleteDoc(doc(db, "catalogo", String(id)));
-  };
-
-  // Executar migração se houver registros antigos no navegador
-  window.migrarLocalStorageParaFirestore();
-</script>
-
 <script>
 /* =========================================================
    LOGIN — equipe e paciente com Firestore/Cache
    ========================================================= */
 const CREDENCIAIS = {
-  usuario: ["ADILSON","Iann"],
-  senha: ["192027", "samilly2008"]
+  usuario: "ADILSON",
+  senha: "192027"
 };
 const LOGIN_SESSAO_KEY = "omnilab_logado";
 const LOGIN_PACIENTE_SESSAO_KEY = "omnilab_paciente_logado";
@@ -714,7 +596,7 @@ const CONFIG = {
   portalUrl: "https://mri001.github.io/OmniLab/",
   sobreNos: {
     texto: "A OmniLab nasceu da vontade de levar exames laboratoriais de confiança a mais famílias, unindo anos de experiência clínica a uma forma simples e direta de atender cada paciente.",
-    assinatura: "Fundado por Dr. Adilson Guimarães Junior."
+    assinatura: "Fundado por Iann Gustavo Borges Guimarães"
   }
 };
 
@@ -1647,102 +1529,6 @@ document.getElementById("modal-resultado-overlay").addEventListener("click", (ev
   if(ev.target.id === "modal-resultado-overlay") fecharModalResultado();
 });
 </script>
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { 
-    getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch 
-  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  // SUBSTITUA COM AS CHAVES REAIS DO SEU PROJETO
-  const firebaseConfig = {
-    apiKey: "SUA_API_KEY_REAL",
-    authDomain: "seu-projeto.firebaseapp.com",
-    projectId: "seu-projeto-id",
-    storageBucket: "seu-projeto.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:abcdef"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  // Torna as funções globais para o restante do script usar
-  window.db = db;
-  window.salvarPacienteAsync = async function(paciente) {
-    const ref = doc(db, "pacientes", String(paciente.id));
-    await setDoc(ref, paciente, { merge: true });
-  };
-  window.salvarVisitaAsync = async function(visita) {
-    const ref = doc(db, "visitas", String(visita.id));
-    await setDoc(ref, visita, { merge: true });
-  };
-</script>
-
-<script>
-async function salvarModal() {
-  const idVisita = document.getElementById("modal-id").value;
-  const nome = document.getElementById("modal-nome").value.trim();
-  const cpf = document.getElementById("modal-cpf").value.trim();
-  const endereco = document.getElementById("modal-endereco").value.trim();
-  const nascimento = document.getElementById("modal-nascimento").value;
-  const realizacao = document.getElementById("modal-realizacao").value;
-  const telefone = document.getElementById("modal-numero").value.trim();
-  const convenio = document.getElementById("modal-convenio").value.trim() || "Particular";
-  const usuario = document.getElementById("modal-usuario").value.trim();
-  const senha = document.getElementById("modal-senha").value;
-  const status = document.getElementById("modal-status").value;
-  const selecionados = lerSelecionadosModal();
-  const msg = document.getElementById("modal-msg");
-
-  if (nome === "") {
-    msg.innerHTML = `<div class="msg aviso">O nome do paciente não pode estar vazio.</div>`;
-    return;
-  }
-  if (selecionados.length === 0) {
-    msg.innerHTML = `<div class="msg aviso">Selecione pelo menos um exame.</div>`;
-    return;
-  }
-
-  const idVinculado = document.getElementById("modal-paciente-vinculado").value;
-  
-  // Localiza ou cria o paciente de forma assíncrona no Firebase
-  const pacienteId = await localizarOuCriarPaciente(
-    { nome, cpf, endereco, nascimento, telefone, convenio, usuario, senha },
-    idVinculado ? parseInt(idVinculado, 10) : null
-  );
-
-  const mapaPrecos = obterMapaExames();
-  const itens = selecionados.map(n => ({ 
-    nome: n, 
-    preco: mapaPrecos[n] || 0, 
-    resultado: resultadosExistentes[n] || "" 
-  }));
-  const total = itens.reduce((s, it) => s + it.preco, 0);
-
-  const dados = {
-    paciente_id: pacienteId,
-    data_realizacao: realizacao,
-    itens,
-    valor: total,
-    status,
-    data_entrega: null
-  };
-
-  // Salva ou atualiza a visita/atendimento
-  if (idVisita) {
-    const anterior = cacheVisitas.find(v => v.id === parseInt(idVisita, 10));
-    dados.data_entrega = anterior ? anterior.data_entrega : null;
-    await editarVisitaBD(parseInt(idVisita, 10), dados);
-    mostrarToast("Atendimento atualizado com sucesso!");
-  } else {
-    await cadastrarVisitaBD(dados);
-    mostrarToast("Atendimento cadastrado com sucesso!");
-  }
-
-  fecharModal();
-  renderizarTudo();
-}
-
-</script>
 </body>
 </html>
