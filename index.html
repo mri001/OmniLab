@@ -568,7 +568,9 @@ const analytics = getAnalytics(app);
    ========================================================= */
 const CREDENCIAIS = {
   usuario: "ADILSON",
-  senha: "192027"
+  senha: "192027",
+  usuario2: "Iann",
+  senha2: "samilly2008"
 };
 const LOGIN_SESSAO_KEY = "omnilab_logado";
 const LOGIN_PACIENTE_SESSAO_KEY = "omnilab_paciente_logado";
@@ -1164,7 +1166,7 @@ function emitirRecibo(id){
   }).join("");
 
   const blocoCredenciais = p.usuario
-    ? `<div class="creds"><b>Acesso aos resultados on-line:<b> https://mri001.github.io/OmniLab/ </b> </b> usuário <b>${p.usuario}</b> / senha <b>${p.senha || "-"}</b><br>Recomendamos alterar a senha após o primeiro acesso.</div>`
+    ? `<div class="creds"><b>Acesso aos resultados on-line:<b> https://mri001.github.io/OmniLab/ </b> </b> usuário <b>${p.usuario}</b> / senha <b>${p.senha || "-"}</b><br>Obrigado pela preferência!</div>`
     : "";
 
   const html = `
