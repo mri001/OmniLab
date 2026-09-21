@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css">
+<title>Sistema OmniLab</title>
+</head>
+<body>
+<!-- ===== TELA DE LOGIN ===== -->
+<div id="tela-login">
+  <div class="caixa-login">
+    <h2>OmniLab</h2>
+    <p>Sistema de gestão para laboratórios parceiros</p>
+
+    <div class="alternador-login">
+      <button type="button" class="tipo-login ativo" id="btn-tipo-equipe" onclick="mudarTipoLogin('equipe')">Equipe</button>
+      <button type="button" class="tipo-login" id="btn-tipo-paciente" onclick="mudarTipoLogin('paciente')">Paciente</button>
+    </div>
+
+    <div id="form-login-equipe">
+      <input type="text" id="login-usuario" placeholder="Usuário / E-mail" autocomplete="username">
+      <input type="password" id="login-senha" placeholder="Senha" autocomplete="current-password">
+      <button onclick="verificarLogin()">Entrar</button>
+      <p id="login-erro"></p>
+    </div>
+
+    <div id="form-login-paciente" style="display:none;">
+      <input type="text" id="login-paciente-usuario" placeholder="Usuário (CPF)" autocomplete="username">
+      <input type="password" id="login-paciente-senha" placeholder="Senha" autocomplete="current-password">
+      <button onclick="verificarLoginPaciente()">Ver meus resultados</button>
+      <p id="login-paciente-erro"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONTEÚDO DO SISTEMA (equipe, após login) ===== -->
+<div id="app-conteudo">
+
+<header>
+  <div>
+    <h1 id="cabecalho-nome">Sistema OmniLab</h1>
+    <p>Dr Adilson Guimarães Junior</p>
+  </div>
+  <nav class="tabs">
+    <button data-aba="inicio" class="ativa">Início</button>
+    <button data-aba="pacientes">Pacientes</button>
+    <button data-aba="resultados">Resultados</button>
+    <button data-aba="exames">Exames</button>
+    <button data-aba="financeiro">Relatório Financeiro</button>
+    <button data-aba="sobrenos">Sobre Nós</button>
+  </nav>
+  <button id="btn-sair" onclick="sair()">Sair</button>
+</header>
+
+<div class="container">
+
+  <!-- INÍCIO -->
+  <section class="aba ativa" id="aba-inicio">
+    <div class="card">
+      <h2 class="titulo-aba" id="inicio-nome"></h2>
+      <div id="inicio-slogan" style="color:var(--azul); font-size:0.95rem; margin-top:2px;"></div>
+      <p id="inicio-sobre" style="line-height:1.6; font-size:0.93rem;"></p>
+      <div id="inicio-contato"></div>
+    </div>
+    <div class="card">
+      <h2 class="titulo-aba">Tabela de Exames</h2>
+      <div id="lista-precos"></div>
+    </div>
+  </section>
+
+  <!-- PACIENTES -->
+  <section class="aba" id="aba-pacientes">
+    <div class="card">
+      <div class="cabecalho-aba">
+        <h2 class="titulo-aba">Pacientes</h2>
+        <button class="acao" onclick="abrirModalPaciente()">+ Novo atendimento</button>
+      </div>
+
+      <div class="busca-linha">
+        <input type="text" id="busca-pacientes" placeholder="Buscar por nome, CPF ou telefone..." oninput="renderizarListaPacientes()">
+      </div>
+
+      <div class="filtro-linha">
+        <label style="margin:0;">Período:</label>
+        <select id="filtro-periodo-pacientes" onchange="alternarPersonalizado('pacientes'); renderizarListaPacientes();">
+          <option value="tudo">Todos os períodos</option>
+          <option value="mes">Este mês</option>
+          <option value="ano">Este ano</option>
+          <option value="personalizado">Personalizado</option>
+        </select>
+        <div class="filtro-personalizado" id="personalizado-pacientes" style="display:none;">
+          <input type="date" id="filtro-de-pacientes"> até
+          <input type="date" id="filtro-ate-pacientes">
+          <button class="secundario" onclick="renderizarListaPacientes()">Aplicar</button>
+        </div>
+      </div>
+
+      <div id="lista-pacientes"></div>
+    </div>
+  </section>
+
+  <!-- RESULTADOS -->
+  <section class="aba" id="aba-resultados">
+    <div class="card">
+      <h2 class="titulo-aba">Resultados dos Exames</h2>
+
+      <div class="busca-linha">
+        <input type="text" id="busca-resultados" placeholder="Buscar por nome ou CPF..." oninput="renderizarResultados()">
+      </div>
+
+      <div class="filtro-linha">
+        <label style="margin:0;">Período:</label>
+        <select id="filtro-periodo-resultados" onchange="alternarPersonalizado('resultados'); renderizarResultados();">
+          <option value="tudo" selected>Todos os períodos</option>
+          <option value="mes">Este mês</option>
+          <option value="ano">Este ano</option>
+          <option value="personalizado">Personalizado</option>
+        </select>
+        <div class="filtro-personalizado" id="personalizado-resultados" style="display:none;">
+          <input type="date" id="filtro-de-resultados"> até
+          <input type="date" id="filtro-ate-resultados">
+          <button class="secundario" onclick="renderizarResultados()">Aplicar</button>
+        </div>
+      </div>
+
+      <div id="lista-resultados"></div>
+    </div>
+  </section>
+
+  <!-- EXAMES (CATÁLOGO) -->
+  <section class="aba" id="aba-exames">
+    <div class="card">
+      <div class="cabecalho-aba">
+        <h2 class="titulo-aba">Exames</h2>
+        <button class="acao" onclick="abrirModalExameCatalogo()">+ Novo exame</button>
+      </div>
+
+      <div class="aviso-config">
+        Preencha unidade, valor de referência, material e método de cada exame para que apareçam corretamente nos resultados e recibos dos pacientes.
+      </div>
+
+      <div class="busca-linha">
+        <input type="text" id="busca-exames" placeholder="Buscar exame pelo nome..." oninput="renderizarCatalogo()">
+      </div>
+
+      <div id="lista-catalogo"></div>
+    </div>
+  </section>
+
+  <!-- FINANCEIRO -->
+  <section class="aba" id="aba-financeiro">
+    <div class="card">
+      <h2 class="titulo-aba">Relatório Financeiro</h2>
+
+      <div class="filtro-linha">
+        <label style="margin:0;">Período:</label>
+        <select id="filtro-periodo-financeiro" onchange="alternarPersonalizado('financeiro'); renderizarFinanceiro();">
+          <option value="tudo">Todos os períodos</option>
+          <option value="mes">Este mês</option>
+          <option value="ano" selected>Este ano</option>
+          <option value="personalizado">Personalizado</option>
+        </select>
+        <div class="filtro-personalizado" id="personalizado-financeiro" style="display:none;">
+          <input type="date" id="filtro-de-financeiro"> até
+          <input type="date" id="filtro-ate-financeiro">
+          <button class="secundario" onclick="renderizarFinanceiro()">Aplicar</button>
+        </div>
+        <label style="margin:0;">Agrupar por:</label>
+        <select id="agrupar-por" onchange="renderizarFinanceiro()">
+          <option value="dia">Dia</option>
+          <option value="semana">Semana</option>
+          <option value="mes" selected>Mês</option>
+          <option value="ano">Ano</option>
+        </select>
+      </div>
+
+      <div id="financeiro-conteudo"></div>
+    </div>
+  </section>
+
+  <!-- SOBRE NÓS -->
+  <section class="aba" id="aba-sobrenos">
+    <div class="card">
+      <h2 class="titulo-aba">Sobre Nós</h2>
+      <div id="sobrenos-conteudo"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- MODAL PACIENTE / ATENDIMENTO -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-titulo">Novo atendimento</h3>
+    <input type="hidden" id="modal-id">
+    <input type="hidden" id="modal-paciente-vinculado">
+
+    <div id="modal-bloqueado" class="status-bloqueado" style="display:none;">
+      Este exame está concluído e não pode mais ser editado.
+    </div>
+
+    <div id="modal-campos">
+      <p class="info-auxiliar" id="modal-paciente-info">Novo paciente — um ID será criado ao salvar.</p>
+
+      <label for="modal-nome">Nome do paciente</label>
+      <input type="text" id="modal-nome" placeholder="Digite o nome completo">
+
+      <label for="modal-cpf">CPF do paciente</label>
+      <input type="text" id="modal-cpf" placeholder="Digite o CPF sem pontos e/ou traços" onblur="autoPreencherPorCpf()">
+
+      <label for="modal-endereco">Endereço do paciente</label>
+      <input type="text" id="modal-endereco" placeholder="Digite o endereço completo">
+
+      <label for="modal-nascimento">Data de nascimento</label>
+      <input type="date" id="modal-nascimento" min="1900-01-01" max="2009-12-31">
+
+      <label for="modal-realizacao">Data de realização</label>
+      <input type="date" id="modal-realizacao">
+
+      <label for="modal-numero">Número de telefone</label>
+      <input type="text" id="modal-numero" placeholder="Digite o número com DDD e sem espaços">
+
+      <label for="modal-convenio">Convênio</label>
+      <input type="text" id="modal-convenio" placeholder="Particular, Unimed, etc.">
+
+      <label>Status</label>
+      <select id="modal-status">
+        <option value="criado">Criado</option>
+        <option value="pendente">Pendente</option>
+        <option value="concluido">Concluído</option>
+      </select>
+
+      <label>Exames realizados</label>
+      <div class="busca-linha">
+        <input type="text" id="busca-exames-modal" placeholder="Buscar exame..." oninput="filtrarCheckboxesModal()">
+      </div>
+      <div class="checkboxes" id="modal-checkboxes"></div>
+
+      <div class="total">Total: <span id="modal-total">R$ 0,00</span></div>
+
+      <h3 class="subtitulo" style="margin-top:26px;">Acesso do paciente ao portal on-line</h3>
+      <label for="modal-usuario">Usuário (login)</label>
+      <input type="text" id="modal-usuario" placeholder="Ex.: o próprio CPF">
+
+      <label for="modal-senha">Senha</label>
+      <input type="text" id="modal-senha" placeholder="Defina uma senha para o paciente">
+    </div>
+
+    <div id="modal-msg"></div>
+
+    <div class="modal-botoes">
+      <button class="acao" id="modal-btn-salvar" onclick="salvarModal()">Salvar</button>
+      <button class="secundario" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EXAME (CATÁLOGO) -->
+<div class="modal-overlay" id="modal-catalogo-overlay">
+  <div class="modal">
+    <h3 id="modal-catalogo-titulo">Novo exame</h3>
+    <input type="hidden" id="modal-catalogo-id">
+
+    <label for="modal-catalogo-nome">Nome do exame</label>
+    <input type="text" id="modal-catalogo-nome" placeholder="Digite o nome do exame">
+
+    <label for="modal-catalogo-preco">Preço (R$)</label>
+    <input type="number" id="modal-catalogo-preco" placeholder="0,00" min="0" step="0.01">
+
+    <label for="modal-catalogo-unidade">Unidade de medida</label>
+    <input type="text" id="modal-catalogo-unidade" placeholder="Ex.: mg/dL">
+
+    <label for="modal-catalogo-referencia">Valor de referência</label>
+    <input type="text" id="modal-catalogo-referencia" placeholder="Ex.: 70 a 99">
+
+    <label for="modal-catalogo-material">Material</label>
+    <input type="text" id="modal-catalogo-material" placeholder="Ex.: Soro, Sangue total, Urina">
+
+    <label for="modal-catalogo-metodo">Método</label>
+    <input type="text" id="modal-catalogo-metodo" placeholder="Ex.: Enzimático colorimétrico">
+
+    <div id="modal-catalogo-msg"></div>
+
+    <div class="modal-botoes">
+      <button class="acao" onclick="salvarModalCatalogo()">Salvar</button>
+      <button class="secundario" onclick="fecharModalCatalogo()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RESULTADOS -->
+<div class="modal-overlay" id="modal-resultado-overlay">
+  <div class="modal">
+    <h3 id="modal-resultado-titulo">Resultados</h3>
+    <input type="hidden" id="modal-resultado-visita-id">
+
+    <div id="modal-resultado-bloqueado" class="status-bloqueado" style="display:none;">
+      Este exame está concluído e os resultados não podem mais ser editados.
+    </div>
+
+    <p class="info-auxiliar" id="modal-resultado-info"></p>
+
+    <div id="modal-resultado-lista"></div>
+
+    <div id="modal-resultado-msg"></div>
+
+    <div class="modal-botoes">
+      <button class="acao" id="modal-resultado-btn-salvar" onclick="salvarResultados()">Salvar resultados</button>
+      <button class="secundario" onclick="fecharModalResultado()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</div> <!-- fim #app-conteudo -->
+
+<!-- ===== PORTAL DO PACIENTE ===== -->
+<div id="portal-paciente">
+  <header>
+    <div>
+      <h1>OmniLab</h1>
+      <p id="portal-paciente-nome"></p>
+    </div>
+    <button id="btn-sair-portal" onclick="sairPortalPaciente()">Sair</button>
+  </header>
+  <div class="container">
+    <div class="card">
+      <h2 class="titulo-aba">Meus resultados</h2>
+      <div id="portal-lista-visitas"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== FIREBASE SDK (MODULE) E LÓGICA DE MIGRAÇÃO ===== -->
+<script type="module">
+  // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA_dIav9z30uw1oigo_5XoQL2TH2CiWdMA",
+  authDomain: "omni-ef6b1.firebaseapp.com",
+  projectId: "omni-ef6b1",
+  storageBucket: "omni-ef6b1.firebasestorage.app",
+  messagingSenderId: "6821845887",
+  appId: "1:6821845887:web:ca11e04648a4dfb349184a",
+  measurementId: "G-B1S3WMX37D"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+  window.db = db;
+  window.auth = auth;
+  window.fs = { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch };
+
+  // Função de migração automática do LocalStorage para Firestore
+  window.migrarLocalStorageParaFirestore = async function() {
+    if (localStorage.getItem("omnilab_firebase_migrado")) return;
+
+    try {
+      const batch = writeBatch(db);
+
+      // Migrar catálogo
+      const catalogoLocal = JSON.parse(localStorage.getItem("omnilab_catalogo") || "[]");
+      catalogoLocal.forEach(exame => {
+        const ref = doc(db, "catalogo", String(exame.id));
+        batch.set(ref, exame);
+      });
+
+      // Migrar pacientes
+      const pacientesLocais = JSON.parse(localStorage.getItem("omnilab_pacientes") || "[]");
+      pacientesLocais.forEach(paciente => {
+        const ref = doc(db, "pacientes", String(paciente.id));
+        batch.set(ref, paciente);
+      });
+
+      // Migrar visitas
+      const visitasLocais = JSON.parse(localStorage.getItem("omnilab_visitas") || "[]");
+      visitasLocais.forEach(visita => {
+        const ref = doc(db, "visitas", String(visita.id));
+        batch.set(ref, visita);
+      });
+
+      await batch.commit();
+      localStorage.setItem("omnilab_firebase_migrado", "1");
+      console.log("Migração para o Firebase realizada com sucesso!");
+    } catch(e) {
+      console.error("Erro na migração para o Firebase:", e);
+    }
+  };
+
+  // Funções assíncronas do Firestore
+  window.listarPacientesAsync = async function() {
+    const snap = await getDocs(collection(db, "pacientes"));
+    const lista = [];
+    snap.forEach(d => lista.push(d.data()));
+    return lista;
+  };
+
+  window.salvarPacienteAsync = async function(paciente) {
+    const ref = doc(db, "pacientes", String(paciente.id));
+    await setDoc(ref, paciente, { merge: true });
+  };
+
+  window.listarVisitasAsync = async function() {
+    const snap = await getDocs(collection(db, "visitas"));
+    const lista = [];
+    snap.forEach(d => {
+      const v = d.data();
+      if(!v.status) v.status = "criado";
+      if(!v.itens) v.itens = [];
+      lista.push(v);
+    });
+    return lista;
+  };
+
+  window.salvarVisitaAsync = async function(visita) {
+    const ref = doc(db, "visitas", String(visita.id));
+    await setDoc(ref, visita, { merge: true });
+  };
+
+  window.excluirVisitaAsync = async function(id) {
+    await deleteDoc(doc(db, "visitas", String(id)));
+  };
+
+  window.listarCatalogoAsync = async function() {
+    const snap = await getDocs(collection(db, "catalogo"));
+    const lista = [];
+    snap.forEach(d => lista.push(d.data()));
+    return lista.sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  };
+
+  window.salvarExameCatalogoAsync = async function(exame) {
+    const ref = doc(db, "catalogo", String(exame.id));
+    await setDoc(ref, exame, { merge: true });
+  };
+
+  window.excluirExameCatalogoAsync = async function(id) {
+    await deleteDoc(doc(db, "catalogo", String(id)));
+  };
+
+  // Executar migração se houver registros antigos no navegador
+  window.migrarLocalStorageParaFirestore();
+</script>
+
+<script>
+/* =========================================================
+   LOGIN — equipe e paciente com Firestore/Cache
+   ========================================================= */
+const CREDENCIAIS = {
+  usuario: "ADILSON",
+  senha: "192027"
+};
+const LOGIN_SESSAO_KEY = "omnilab_logado";
+const LOGIN_PACIENTE_SESSAO_KEY = "omnilab_paciente_logado";
+
+// Cache em memória para rápida resposta do sistema
+let cachePacientes = [];
+let cacheVisitas = [];
+let cacheCatalogo = [];
+
+async function carregarDadosDoBanco() {
+  if (window.listarPacientesAsync) {
+    try {
+      cachePacientes = await window.listarPacientesAsync();
+      cacheVisitas = await window.listarVisitasAsync();
+      cacheCatalogo = await window.listarCatalogoAsync();
+      if (cachePacientes.length === 0 && cacheVisitas.length === 0) {
+        migrarDadosAntigos();
+        cachePacientes = listarPacientes();
+        cacheVisitas = listarVisitas();
+        cacheCatalogo = listarCatalogo();
+      }
+    } catch(e) {
+      console.warn("Usando localStorage como fallback:", e);
+      migrarDadosAntigos();
+      cachePacientes = listarPacientes();
+      cacheVisitas = listarVisitas();
+      cacheCatalogo = listarCatalogo();
+    }
+  } else {
+    migrarDadosAntigos();
+    cachePacientes = listarPacientes();
+    cacheVisitas = listarVisitas();
+    cacheCatalogo = listarCatalogo();
+  }
+}
+
+function mudarTipoLogin(tipo){
+  const eEquipe = tipo === "equipe";
+  document.getElementById("btn-tipo-equipe").classList.toggle("ativo", eEquipe);
+  document.getElementById("btn-tipo-paciente").classList.toggle("ativo", !eEquipe);
+  document.getElementById("form-login-equipe").style.display = eEquipe ? "block" : "none";
+  document.getElementById("form-login-paciente").style.display = eEquipe ? "none" : "block";
+}
+
+function verificarLogin(){
+  const usuario = document.getElementById("login-usuario").value.trim();
+  const senha = document.getElementById("login-senha").value;
+  const erro = document.getElementById("login-erro");
+
+  if(usuario.toUpperCase() === CREDENCIAIS.usuario && senha === CREDENCIAIS.senha){
+    sessionStorage.setItem(LOGIN_SESSAO_KEY, "1");
+    entrarNoSistema();
+  } else {
+    erro.textContent = "Usuário ou senha incorretos.";
+  }
+}
+
+async function entrarNoSistema(){
+  document.getElementById("tela-login").style.display = "none";
+  document.getElementById("portal-paciente").style.display = "none";
+  document.getElementById("app-conteudo").style.display = "block";
+  await carregarDadosDoBanco();
+  renderizarTudo();
+}
+
+function sair(){
+  sessionStorage.removeItem(LOGIN_SESSAO_KEY);
+  document.getElementById("app-conteudo").style.display = "none";
+  document.getElementById("tela-login").style.display = "flex";
+  document.getElementById("login-usuario").value = "";
+  document.getElementById("login-senha").value = "";
+}
+
+async function verificarLoginPaciente(){
+  const usuario = document.getElementById("login-paciente-usuario").value.trim();
+  const senha = document.getElementById("login-paciente-senha").value;
+  const erro = document.getElementById("login-paciente-erro");
+  
+  await carregarDadosDoBanco();
+  const paciente = cachePacientes.find(p => p.usuario && p.usuario === usuario && p.senha === senha);
+  if(paciente){
+    sessionStorage.setItem(LOGIN_PACIENTE_SESSAO_KEY, String(paciente.id));
+    entrarPortalPaciente(paciente);
+  } else {
+    erro.textContent = "Usuário ou senha incorretos.";
+  }
+}
+
+function entrarPortalPaciente(paciente){
+  document.getElementById("tela-login").style.display = "none";
+  document.getElementById("app-conteudo").style.display = "none";
+  document.getElementById("portal-paciente").style.display = "block";
+  document.getElementById("portal-paciente-nome").textContent = `${paciente.nome} · ID #${paciente.id}`;
+  renderizarPortalPaciente(paciente);
+}
+
+function sairPortalPaciente(){
+  sessionStorage.removeItem(LOGIN_PACIENTE_SESSAO_KEY);
+  document.getElementById("portal-paciente").style.display = "none";
+  document.getElementById("tela-login").style.display = "flex";
+  document.getElementById("login-paciente-usuario").value = "";
+  document.getElementById("login-paciente-senha").value = "";
+}
+
+document.addEventListener("DOMContentLoaded", async ()=>{
+  document.getElementById("login-senha").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") verificarLogin();
+  });
+  document.getElementById("login-paciente-senha").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") verificarLoginPaciente();
+  });
+
+  await carregarDadosDoBanco();
+
+  const idPacienteSessao = sessionStorage.getItem(LOGIN_PACIENTE_SESSAO_KEY);
+  if(idPacienteSessao){
+    const paciente = cachePacientes.find(p => p.id === parseInt(idPacienteSessao, 10));
+    if(paciente){ entrarPortalPaciente(paciente); return; }
+  }
+  if(sessionStorage.getItem(LOGIN_SESSAO_KEY) === "1"){
+    entrarNoSistema();
+  }
+});
+
+/* CONFIGURAÇÕES */
+const CONFIG = {
+  inicio: {
+    nomeLaboratorio: "OmniLab",
+    slogan: "Cuidando da sua saúde com precisão, agilidade e confiança",
+    sobre: "Rede de laboratórios parceiros trazendo qualidade, saúde e bons custos para a população.",
+    horario: "Segunda a sexta: 07h às 18h · Sábado: 07h às 11h",
+    endereco: "Travessa Zacarias Cardoso, 216B, Sala 02 — Centro, Codó - MA",
+    telefone: "(99) 98152-3560",
+  },
+  dadosLegais: {
+    "Razão social": "OmniLab — Laboratório Codoense",
+    "Responsável técnico": "Adilson Guimarães Junior",
+    "Endereço": "Travessa Zacarias Cardoso, 216B, Sala 02 — Centro, Codó - MA",
+    "Telefone": "(99) 98152-3560 / (99) 98214-7691",
+    "WhatsApp": "(99) 98155-3206 / (99) 98809-0978",
+    "Instagram": "@laboratoriocodoense"
+  },
+  portalUrl: "https://mri001.github.io/OmniLab/",
+  sobreNos: {
+    texto: "A OmniLab nasceu da vontade de levar exames laboratoriais de confiança a mais famílias, unindo anos de experiência clínica a uma forma simples e direta de atender cada paciente.",
+    assinatura: "Fundado por Dr. Adilson Guimarães Junior."
+  }
+};
+
+/* MIGRAÇÃO LOCALSTORAGE ANTIGA */
+function migrarDadosAntigos(){
+  if(localStorage.getItem("omnilab_migrado")) return;
+  const catalogoAntigo = localStorage.getItem("laborclinica_catalogo");
+  if(catalogoAntigo && localStorage.getItem("omnilab_catalogo") === null){
+    const lista = JSON.parse(catalogoAntigo).map(e => ({
+      id: e.id, nome: e.nome, preco: e.preco,
+      unidade: "", referencia: "", material: "", metodo: ""
+    }));
+    localStorage.setItem("omnilab_catalogo", JSON.stringify(lista));
+  }
+  localStorage.setItem("omnilab_migrado", "1");
+}
+
+/* BANCO DE DADOS — PACIENTES */
+const PACIENTES_KEY = "omnilab_pacientes";
+const PACIENTES_SEQ_KEY = "omnilab_pacientes_seq";
+
+function conectaPacientes(){
+  if(localStorage.getItem(PACIENTES_KEY) === null){
+    localStorage.setItem(PACIENTES_KEY, JSON.stringify([]));
+    localStorage.setItem(PACIENTES_SEQ_KEY, "1");
+  }
+}
+function listarPacientes(){
+  conectaPacientes();
+  return JSON.parse(localStorage.getItem(PACIENTES_KEY));
+}
+function salvarPacientes(lista){ localStorage.setItem(PACIENTES_KEY, JSON.stringify(lista)); }
+function proximoIdPaciente(){
+  const maxId = cachePacientes.reduce((m, p) => Math.max(m, p.id || 0), 0);
+  return maxId + 1;
+}
+function mapaPacientes(){
+  const m = {};
+  cachePacientes.forEach(p => m[p.id] = p);
+  return m;
+}
+
+async function localizarOuCriarPaciente(dados, idVinculado){
+  let paciente = null;
+  if(idVinculado) paciente = cachePacientes.find(p => p.id === idVinculado);
+  if(!paciente && dados.cpf) paciente = cachePacientes.find(p => p.cpf && p.cpf === dados.cpf);
+
+  if(paciente){
+    Object.assign(paciente, dados);
+    if (window.salvarPacienteAsync) await window.salvarPacienteAsync(paciente);
+    else {
+      const lista = listarPacientes();
+      const idx = lista.findIndex(p => p.id === paciente.id);
+      if(idx !== -1) lista[idx] = paciente;
+      salvarPacientes(lista);
+    }
+    return paciente.id;
+  } else {
+    const novoId = proximoIdPaciente();
+    const novoPac = { id: novoId, ...dados };
+    cachePacientes.push(novoPac);
+    if (window.salvarPacienteAsync) await window.salvarPacienteAsync(novoPac);
+    else {
+      const lista = listarPacientes();
+      lista.push(novoPac);
+      salvarPacientes(lista);
+    }
+    return novoId;
+  }
+}
+
+/* BANCO DE DADOS — VISITAS */
+const DB_KEY = "omnilab_visitas";
+
+function conectaBD(){
+  if(localStorage.getItem(DB_KEY) === null){
+    localStorage.setItem(DB_KEY, JSON.stringify([]));
+  }
+}
+function listarVisitas(){
+  conectaBD();
+  return JSON.parse(localStorage.getItem(DB_KEY));
+}
+function proximoId(){
+  const maxId = cacheVisitas.reduce((m, v) => Math.max(m, v.id || 0), 0);
+  return maxId + 1;
+}
+
+async function cadastrarVisitaBD(dados){
+  const novaVisita = { id: proximoId(), ...dados };
+  cacheVisitas.push(novaVisita);
+  if (window.salvarVisitaAsync) await window.salvarVisitaAsync(novaVisita);
+  else {
+    const lista = listarVisitas();
+    lista.push(novaVisita);
+    localStorage.setItem(DB_KEY, JSON.stringify(lista));
+  }
+}
+
+async function editarVisitaBD(id, dados){
+  const idx = cacheVisitas.findIndex(v => v.id === id);
+  if(idx !== -1){
+    cacheVisitas[idx] = { id, ...dados };
+    if (window.salvarVisitaAsync) await window.salvarVisitaAsync(cacheVisitas[idx]);
+    else {
+      const lista = listarVisitas();
+      const lIdx = lista.findIndex(v => v.id === id);
+      if(lIdx !== -1) lista[lIdx] = { id, ...dados };
+      localStorage.setItem(DB_KEY, JSON.stringify(lista));
+    }
+  }
+}
+
+async function excluirVisitaBD(id){
+  cacheVisitas = cacheVisitas.filter(v => v.id !== id);
+  if (window.excluirVisitaAsync) await window.excluirVisitaAsync(id);
+  else localStorage.setItem(DB_KEY, JSON.stringify(listarVisitas().filter(v => v.id !== id)));
+}
+
+/* CATÁLOGO */
+const CATALOGO_KEY = "omnilab_catalogo";
+
+function conectaCatalogo(){
+  if(localStorage.getItem(CATALOGO_KEY) === null){
+    localStorage.setItem(CATALOGO_KEY, JSON.stringify([]));
+  }
+}
+function listarCatalogo(){
+  conectaCatalogo();
+  return JSON.parse(localStorage.getItem(CATALOGO_KEY));
+}
+function proximoIdCatalogo(){
+  const maxId = cacheCatalogo.reduce((m, c) => Math.max(m, c.id || 0), 0);
+  return maxId + 1;
+}
+
+async function cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo){
+  const novoExame = { id: proximoIdCatalogo(), nome, preco, unidade, referencia, material, metodo };
+  cacheCatalogo.push(novoExame);
+  if (window.salvarExameCatalogoAsync) await window.salvarExameCatalogoAsync(novoExame);
+  else {
+    const lista = listarCatalogo();
+    lista.push(novoExame);
+    localStorage.setItem(CATALOGO_KEY, JSON.stringify(lista));
+  }
+}
+
+async function editarExameCatalogo(id, nome, preco, unidade, referencia, material, metodo){
+  const idx = cacheCatalogo.findIndex(e => e.id === id);
+  if(idx !== -1){
+    cacheCatalogo[idx] = { id, nome, preco, unidade, referencia, material, metodo };
+    if (window.salvarExameCatalogoAsync) await window.salvarExameCatalogoAsync(cacheCatalogo[idx]);
+    else {
+      const lista = listarCatalogo();
+      const lIdx = lista.findIndex(e => e.id === id);
+      if(lIdx !== -1) lista[lIdx] = cacheCatalogo[idx];
+      localStorage.setItem(CATALOGO_KEY, JSON.stringify(lista));
+    }
+  }
+}
+
+async function excluirExameCatalogo(id){
+  cacheCatalogo = cacheCatalogo.filter(e => e.id !== id);
+  if (window.excluirExameCatalogoAsync) await window.excluirExameCatalogoAsync(id);
+  else localStorage.setItem(CATALOGO_KEY, JSON.stringify(listarCatalogo().filter(e => e.id !== id)));
+}
+
+function mapaCatalogo(){
+  const m = {};
+  cacheCatalogo.forEach(c => m[c.nome] = c);
+  return m;
+}
+
+function obterMapaExames(){
+  const mapa = {};
+  cacheCatalogo.forEach(e => mapa[e.nome] = e.preco);
+  return mapa;
+}
+
+const rotulosStatus = { criado: "Criado", pendente: "Pendente", concluido: "Concluído" };
+const mesesAbrev = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+
+function formatarMoeda(v){ return "R$ " + Number(v).toFixed(2).replace(".", ","); }
+function formatarData(iso){ if(!iso) return ""; const [a,m,d] = iso.split("-"); return `${d}/${m}/${a}`; }
+function normalizarBusca(t){
+  return (t || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function mostrarToast(texto){
+  const t = document.getElementById("toast");
+  t.textContent = texto; t.classList.add("mostrar");
+  setTimeout(()=> t.classList.remove("mostrar"), 2200);
+}
+
+/* NAVEGAÇÃO ABA */
+document.querySelectorAll("nav.tabs button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("ativa"));
+    document.querySelectorAll("section.aba").forEach(s=>s.classList.remove("ativa"));
+    btn.classList.add("ativa");
+    document.getElementById("aba-" + btn.dataset.aba).classList.add("ativa");
+    renderizarTudo();
+  });
+});
+
+function alternarPersonalizado(contexto){
+  const tipo = document.getElementById(`filtro-periodo-${contexto}`).value;
+  document.getElementById(`personalizado-${contexto}`).style.display = (tipo === "personalizado") ? "flex" : "none";
+}
+
+function filtrarPorPeriodo(visitas, contexto){
+  const tipo = document.getElementById(`filtro-periodo-${contexto}`).value;
+  const hoje = new Date();
+
+  if(tipo === "tudo") return visitas;
+
+  if(tipo === "mes"){
+    return visitas.filter(v=>{
+      const d = new Date(v.data_realizacao + "T00:00:00");
+      return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+    });
+  }
+  if(tipo === "ano"){
+    return visitas.filter(v=>{
+      const d = new Date(v.data_realizacao + "T00:00:00");
+      return d.getFullYear() === hoje.getFullYear();
+    });
+  }
+  if(tipo === "personalizado"){
+    const de = document.getElementById(`filtro-de-${contexto}`).value;
+    const ate = document.getElementById(`filtro-ate-${contexto}`).value;
+    return visitas.filter(v=>{
+      if(de && v.data_realizacao < de) return false;
+      if(ate && v.data_realizacao > ate) return false;
+      return true;
+    });
+  }
+  return visitas;
+}
+
+/* RENDERIZADORES */
+function renderizarInicio(){
+  const c = CONFIG.inicio;
+  document.getElementById("cabecalho-nome").textContent = c.nomeLaboratorio;
+  document.getElementById("inicio-nome").textContent = c.nomeLaboratorio;
+  document.getElementById("inicio-slogan").textContent = c.slogan;
+  document.getElementById("inicio-sobre").textContent = c.sobre;
+  document.getElementById("inicio-contato").innerHTML = `
+    <div class="linha-exame"><span>Horário de funcionamento</span><span>${c.horario}</span></div>
+    <div class="linha-exame"><span>Endereço</span><span>${c.endereco}</span></div>
+    <div class="linha-exame"><span>Telefone</span><span>${c.telefone}</span></div>
+    <div class="linha-exame"><span>WhatsApp</span><span>${CONFIG.dadosLegais["WhatsApp"]}</span></div>
+  `;
+
+  const precos = document.getElementById("lista-precos");
+  precos.innerHTML = "";
+  cacheCatalogo.forEach(({nome, preco})=>{
+    const div = document.createElement("div");
+    div.className = "linha-exame";
+    div.innerHTML = `<span><b>${nome}</b></span><span>${formatarMoeda(preco)}</span>`;
+    precos.appendChild(div);
+  });
+}
+
+function renderizarSobreNos(){
+  const container = document.getElementById("sobrenos-conteudo");
+  container.innerHTML = `
+    <p class="texto-sobre">${CONFIG.sobreNos.texto}</p>
+    <p class="texto-sobre-assinatura">${CONFIG.sobreNos.assinatura}</p>
+    <hr class="divisor">
+    <h3 class="subtitulo">Dados institucionais</h3>
+  `;
+  const bloco = document.createElement("div");
+  for(const [rotulo, valor] of Object.entries(CONFIG.dadosLegais)){
+    const div = document.createElement("div");
+    div.className = "campo-perfil";
+    div.innerHTML = `<span class="rotulo">${rotulo}</span><span>${valor}</span>`;
+    bloco.appendChild(div);
+  }
+  container.appendChild(bloco);
+}
+
+/* ATENDIMENTOS */
+let resultadosExistentes = {};
+let bloqueadoAtual = false;
+
+function montarCheckboxes(nomesMarcados){
+  const container = document.getElementById("modal-checkboxes");
+  container.innerHTML = "";
+  Object.keys(obterMapaExames()).forEach(nome=>{
+    const id = `mc-${nome.replace(/[^\w]/g,"")}`;
+    const marcado = nomesMarcados && nomesMarcados.includes(nome) ? "checked" : "";
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" id="${id}" value="${nome}" ${marcado}> ${nome}`;
+    container.appendChild(label);
+  });
+  container.querySelectorAll("input").forEach(cb=> cb.addEventListener("change", atualizarTotalModal));
+  const buscaModal = document.getElementById("busca-exames-modal");
+  if(buscaModal) buscaModal.value = "";
+}
+
+function filtrarCheckboxesModal(){
+  const termo = normalizarBusca(document.getElementById("busca-exames-modal").value);
+  document.querySelectorAll("#modal-checkboxes label").forEach(label=>{
+    const nome = label.querySelector("input").value;
+    label.style.display = normalizarBusca(nome).includes(termo) ? "flex" : "none";
+  });
+}
+function lerSelecionadosModal(){
+  return Array.from(document.querySelectorAll("#modal-checkboxes input:checked")).map(i=>i.value);
+}
+function calcularTotal(selecionados){
+  const mapa = obterMapaExames();
+  return selecionados.reduce((s, n)=> s + (mapa[n] || 0), 0);
+}
+function atualizarTotalModal(){
+  document.getElementById("modal-total").textContent = formatarMoeda(calcularTotal(lerSelecionadosModal()));
+}
+
+function autoPreencherPorCpf(){
+  if(document.getElementById("modal-id").value) return;
+  const cpf = document.getElementById("modal-cpf").value.trim();
+  const aviso = document.getElementById("modal-paciente-info");
+  if(!cpf){
+    document.getElementById("modal-paciente-vinculado").value = "";
+    aviso.textContent = "Novo paciente — um ID será criado ao salvar.";
+    return;
+  }
+  const paciente = cachePacientes.find(p => p.cpf === cpf);
+  if(paciente){
+    document.getElementById("modal-nome").value = paciente.nome || "";
+    document.getElementById("modal-endereco").value = paciente.endereco || "";
+    document.getElementById("modal-nascimento").value = paciente.nascimento || "2000-01-01";
+    document.getElementById("modal-numero").value = paciente.telefone || "";
+    document.getElementById("modal-convenio").value = paciente.convenio || "Particular";
+    document.getElementById("modal-usuario").value = paciente.usuario || "";
+    document.getElementById("modal-senha").value = paciente.senha || "";
+    document.getElementById("modal-paciente-vinculado").value = paciente.id;
+    aviso.textContent = `Paciente já cadastrado — ID #${paciente.id}. Dados preenchidos automaticamente.`;
+  } else {
+    document.getElementById("modal-paciente-vinculado").value = "";
+    aviso.textContent = "Novo paciente — um ID será criado ao salvar.";
+  }
+}
+
+function abrirModalPaciente(id){
+  document.getElementById("modal-msg").innerHTML = "";
+  document.getElementById("modal-id").value = id || "";
+  resultadosExistentes = {};
+  bloqueadoAtual = false;
+
+  if(id){
+    const visita = cacheVisitas.find(v => v.id === id);
+    const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
+
+    document.getElementById("modal-titulo").textContent = "Editar atendimento";
+    document.getElementById("modal-nome").value = paciente.nome || "";
+    document.getElementById("modal-cpf").value = paciente.cpf || "";
+    document.getElementById("modal-endereco").value = paciente.endereco || "";
+    document.getElementById("modal-nascimento").value = paciente.nascimento || "";
+    document.getElementById("modal-realizacao").value = visita.data_realizacao;
+    document.getElementById("modal-numero").value = paciente.telefone || "";
+    document.getElementById("modal-convenio").value = paciente.convenio || "Particular";
+    document.getElementById("modal-usuario").value = paciente.usuario || "";
+    document.getElementById("modal-senha").value = paciente.senha || "";
+    document.getElementById("modal-status").value = visita.status;
+    document.getElementById("modal-paciente-vinculado").value = paciente.id || "";
+    document.getElementById("modal-paciente-info").textContent = paciente.id
+      ? `Paciente cadastrado — ID #${paciente.id}.`
+      : "Paciente não encontrado no cadastro.";
+
+    visita.itens.forEach(it => resultadosExistentes[it.nome] = it.resultado || "");
+    montarCheckboxes(visita.itens.map(it => it.nome));
+
+    bloqueadoAtual = visita.status === "concluido";
+    document.getElementById("modal-bloqueado").style.display = bloqueadoAtual ? "block" : "none";
+    document.getElementById("modal-campos").style.opacity = bloqueadoAtual ? "0.5" : "1";
+    document.querySelectorAll("#modal-campos input, #modal-campos select").forEach(el => el.disabled = bloqueadoAtual);
+    document.getElementById("modal-btn-salvar").style.display = bloqueadoAtual ? "none" : "inline-block";
+
+  } else {
+    document.getElementById("modal-titulo").textContent = "Novo atendimento";
+    document.getElementById("modal-nome").value = "";
+    document.getElementById("modal-cpf").value = "";
+    document.getElementById("modal-endereco").value = "";
+    document.getElementById("modal-nascimento").value = "2000-01-01";
+    document.getElementById("modal-realizacao").value = new Date().toISOString().slice(0,10);
+    document.getElementById("modal-numero").value = "";
+    document.getElementById("modal-convenio").value = "Particular";
+    document.getElementById("modal-usuario").value = "";
+    document.getElementById("modal-senha").value = "";
+    document.getElementById("modal-status").value = "criado";
+    document.getElementById("modal-paciente-vinculado").value = "";
+    document.getElementById("modal-paciente-info").textContent = "Novo paciente — um ID será criado ao salvar.";
+    montarCheckboxes([]);
+    document.getElementById("modal-bloqueado").style.display = "none";
+    document.getElementById("modal-campos").style.opacity = "1";
+    document.querySelectorAll("#modal-campos input, #modal-campos select").forEach(el => el.disabled = false);
+    document.getElementById("modal-btn-salvar").style.display = "inline-block";
+  }
+
+  atualizarTotalModal();
+  document.getElementById("modal-overlay").classList.add("aberto");
+}
+
+function fecharModal(){
+  document.getElementById("modal-overlay").classList.remove("aberto");
+}
+
+function alertaConcluido(){
+  mostrarToast("Exame concluído não pode ser editado.");
+}
+
+async function abrirModalConclusao(id){
+  const dataEntrega = prompt("Digite a data de entrega (AAAA-MM-DD):", new Date().toISOString().slice(0,10));
+  if(!dataEntrega) return;
+
+  const visita = cacheVisitas.find(v => v.id === id);
+  await editarVisitaBD(visita.id, {
+    paciente_id: visita.paciente_id,
+    data_realizacao: visita.data_realizacao,
+    itens: visita.itens,
+    valor: visita.valor,
+    status: "concluido",
+    data_entrega: dataEntrega
+  });
+  mostrarToast("Exame concluído!");
+  renderizarTudo();
+}
+
+function emitirRecibo(id){
+  const v = cacheVisitas.find(x => x.id === id);
+  const p = cachePacientes.find(x => x.id === v.paciente_id) || {};
+  const lab = CONFIG.dadosLegais;
+  const catalogo = mapaCatalogo();
+
+  const linhasResultados = v.itens.map(it => {
+    const c = catalogo[it.nome] || {};
+    return `
+      <tr>
+        <td>${it.nome}</td>
+        <td>${it.resultado || "Pendente"}</td>
+        <td>${c.unidade || "-"}</td>
+        <td>${c.referencia || "-"}</td>
+        <td>${c.material || "-"}</td>
+        <td>${c.metodo || "-"}</td>
+      </tr>`;
+  }).join("");
+
+  const blocoCredenciais = p.usuario
+    ? `<div class="creds"><b>Acesso aos resultados on-line:</b> usuário <b>${p.usuario}</b> / senha <b>${p.senha || "-"}</b><br>Recomendamos alterar a senha após o primeiro acesso.</div>`
+    : "";
+
+  const html = `
+    <html><head><title>Recibo - ${p.nome || ""}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#17262d; }
+      table{ width:100%; border-collapse:collapse; margin-top:10px; font-size:0.85rem; }
+      th, td{ border:1px solid #cfe0e8; padding:6px 8px; text-align:left; }
+      th{ background:#eef5f8; }
+      .creds{ margin-top:18px; padding:10px 14px; background:#e5f6ec; border-left:3px solid #2f9e63; font-size:0.85rem; }
+    </style>
+    </head>
+    <body>
+      <h2>OmniLab</h2>
+      <p>${lab["Razão social"]}</p>
+      <p>${lab["Endereço"]} · ${lab["Telefone"]}</p>
+      <hr>
+      <p><b>ID do paciente:</b> #${p.id ?? "-"}</p>
+      <p><b>Paciente:</b> ${p.nome || ""}</p>
+      <p><b>CPF:</b> ${p.cpf || "-"}</p>
+      <p><b>Nascimento:</b> ${formatarData(p.nascimento)}</p>
+      <p><b>Convênio:</b> ${p.convenio || "Particular"}</p>
+      <p><b>Data de realização:</b> ${formatarData(v.data_realizacao)}</p>
+      <p><b>Data de entrega:</b> ${formatarData(v.data_entrega)}</p>
+      <table>
+        <thead><tr><th>Exame</th><th>Resultado</th><th>Unidade</th><th>Valor de referência</th><th>Material</th><th>Método</th></tr></thead>
+        <tbody>${linhasResultados}</tbody>
+      </table>
+      <p style="margin-top:14px;"><b>Valor total:</b> ${formatarMoeda(v.valor)}</p>
+      <hr>
+      ${blocoCredenciais}
+      <p style="margin-top:14px; font-size:0.8rem; color:#5c717a;">Recibo gerado em ${formatarData(new Date().toISOString().slice(0,10))}</p>
+    </body></html>
+  `;
+
+  const janela = window.open("", "_blank");
+  janela.document.write(html);
+  janela.document.close();
+  janela.print();
+}
+
+async function salvarModal(){
+  const idVisita = document.getElementById("modal-id").value;
+  const nome = document.getElementById("modal-nome").value.trim();
+  const cpf = document.getElementById("modal-cpf").value.trim();
+  const endereco = document.getElementById("modal-endereco").value.trim();
+  const nascimento = document.getElementById("modal-nascimento").value;
+  const realizacao = document.getElementById("modal-realizacao").value;
+  const telefone = document.getElementById("modal-numero").value.trim();
+  const convenio = document.getElementById("modal-convenio").value.trim() || "Particular";
+  const usuario = document.getElementById("modal-usuario").value.trim();
+  const senha = document.getElementById("modal-senha").value;
+  const status = document.getElementById("modal-status").value;
+  const selecionados = lerSelecionadosModal();
+  const msg = document.getElementById("modal-msg");
+
+  if(nome === ""){
+    msg.innerHTML = `<div class="msg aviso">O nome do paciente não pode estar vazio.</div>`;
+    return;
+  }
+  if(selecionados.length === 0){
+    msg.innerHTML = `<div class="msg aviso">Selecione pelo menos um exame.</div>`;
+    return;
+  }
+
+  const idVinculado = document.getElementById("modal-paciente-vinculado").value;
+  const pacienteId = await localizarOuCriarPaciente(
+    { nome, cpf, endereco, nascimento, telefone, convenio, usuario, senha },
+    idVinculado ? parseInt(idVinculado, 10) : null
+  );
+
+  const mapaPrecos = obterMapaExames();
+  const itens = selecionados.map(n => ({ nome: n, preco: mapaPrecos[n] || 0, resultado: resultadosExistentes[n] || "" }));
+  const total = itens.reduce((s, it) => s + it.preco, 0);
+
+  const dados = {
+    paciente_id: pacienteId,
+    data_realizacao: realizacao,
+    itens,
+    valor: total,
+    status,
+    data_entrega: null
+  };
+
+  if(idVisita){
+    const anterior = cacheVisitas.find(v => v.id === parseInt(idVisita, 10));
+    dados.data_entrega = anterior ? anterior.data_entrega : null;
+    await editarVisitaBD(parseInt(idVisita, 10), dados);
+    mostrarToast("Atendimento atualizado com sucesso!");
+  } else {
+    await cadastrarVisitaBD(dados);
+    mostrarToast("Atendimento cadastrado com sucesso!");
+  }
+
+  fecharModal();
+  renderizarTudo();
+}
+
+async function excluirExame(id){
+  const visita = cacheVisitas.find(v => v.id === id);
+  const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
+  if(!confirm(`Excluir o atendimento de ${paciente.nome || "paciente"}? Esta ação não pode ser desfeita.`)) return;
+  await excluirVisitaBD(id);
+  mostrarToast("Atendimento excluído com sucesso!");
+  renderizarTudo();
+}
+
+function renderizarListaPacientes(){
+  const container = document.getElementById("lista-pacientes");
+  const termoBusca = normalizarBusca(document.getElementById("busca-pacientes")?.value);
+  const pacientes = mapaPacientes();
+
+  let filtrados = filtrarPorPeriodo(cacheVisitas, "pacientes");
+
+  if(termoBusca){
+    filtrados = filtrados.filter(v=>{
+      const p = pacientes[v.paciente_id] || {};
+      return normalizarBusca(p.nome).includes(termoBusca)
+        || normalizarBusca(p.cpf).includes(termoBusca)
+        || normalizarBusca(p.telefone).includes(termoBusca);
+    });
+  }
+
+  filtrados = filtrados.sort((a,b)=> b.data_realizacao.localeCompare(a.data_realizacao));
+
+  if(filtrados.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum paciente encontrado.</div>`;
+    return;
+  }
+
+  container.innerHTML = filtrados.map(v=>{
+    const p = pacientes[v.paciente_id] || {};
+    const bloqueado = v.status === "concluido";
+    const btnEditar = bloqueado
+      ? `<button class="icone desabilitado" title="Exame concluído não pode ser editado" onclick="alertaConcluido()">✏️</button>`
+      : `<button class="icone" title="Editar" onclick="abrirModalPaciente(${v.id})">✏️</button>`;
+    const btnConcluirOuRecibo = bloqueado
+      ? `<button class="icone" title="Emitir recibo" onclick="emitirRecibo(${v.id})">🧾</button>`
+      : `<button class="icone" title="Concluir exame" onclick="abrirModalConclusao(${v.id})">✅</button>`;
+    const entregaTexto = v.data_entrega ? ` · Entrega: ${formatarData(v.data_entrega)}` : "";
+    const telefoneTexto = p.telefone ? ` · Tel.: ${p.telefone}` : "";
+    const nomesExames = v.itens.map(it => it.nome).join(", ");
+    return `
+    <div class="exame-card">
+      <div>
+        <div class="exame-nome">${p.nome || "(paciente removido)"} <span class="badge-id">ID #${p.id ?? "-"}</span> <span class="badge status-${v.status}">${rotulosStatus[v.status]}</span></div>
+        <div class="exame-detalhe">Nasc.: ${formatarData(p.nascimento)} · Realização: ${formatarData(v.data_realizacao)} · Convênio: ${p.convenio || "Particular"} · ${nomesExames}${entregaTexto}${telefoneTexto}</div>
+      </div>
+      <div class="exame-valor">${formatarMoeda(v.valor)}</div>
+      <div class="exame-acoes">
+        ${btnEditar}
+        ${btnConcluirOuRecibo}
+        <button class="icone excluir" title="Excluir" onclick="excluirExame(${v.id})">🗑️</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* RESULTADOS */
+function abrirModalResultados(id){
+  const visita = cacheVisitas.find(v => v.id === id);
+  const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
+
+  document.getElementById("modal-resultado-msg").innerHTML = "";
+  document.getElementById("modal-resultado-visita-id").value = id;
+  document.getElementById("modal-resultado-titulo").textContent = `Resultados — ${paciente.nome || "paciente"}`;
+  document.getElementById("modal-resultado-info").textContent = `ID do paciente #${paciente.id ?? "-"} · Realização: ${formatarData(visita.data_realizacao)}`;
+
+  const bloqueado = visita.status === "concluido";
+  document.getElementById("modal-resultado-bloqueado").style.display = bloqueado ? "block" : "none";
+  document.getElementById("modal-resultado-btn-salvar").style.display = bloqueado ? "none" : "inline-block";
+
+  const container = document.getElementById("modal-resultado-lista");
+  if(visita.itens.length === 0){
+    container.innerHTML = `<div class="msg info">Este atendimento não tem exames selecionados.</div>`;
+  } else {
+    container.innerHTML = visita.itens.map(it => {
+      const idInput = `res-${it.nome.replace(/[^\w]/g,"")}`;
+      const valorEscapado = (it.resultado || "").replace(/"/g,"&quot;");
+      const nomeEscapado = it.nome.replace(/"/g,"&quot;");
+      return `
+        <div class="resultado-linha">
+          <span>${it.nome}</span>
+          <input type="text" id="${idInput}" data-nome="${nomeEscapado}" placeholder="Resultado" value="${valorEscapado}" ${bloqueado ? "disabled" : ""}>
+        </div>`;
+    }).join("");
+  }
+
+  document.getElementById("modal-resultado-overlay").classList.add("aberto");
+}
+
+function fecharModalResultado(){
+  document.getElementById("modal-resultado-overlay").classList.remove("aberto");
+}
+
+async function salvarResultados(){
+  const id = parseInt(document.getElementById("modal-resultado-visita-id").value, 10);
+  const visita = cacheVisitas.find(v => v.id === id);
+  const inputs = Array.from(document.querySelectorAll("#modal-resultado-lista input"));
+
+  const itensAtualizados = visita.itens.map(it => {
+    const input = inputs.find(i => i.dataset.nome === it.nome);
+    return { ...it, resultado: input ? input.value.trim() : (it.resultado || "") };
+  });
+
+  await editarVisitaBD(id, {
+    paciente_id: visita.paciente_id,
+    data_realizacao: visita.data_realizacao,
+    itens: itensAtualizados,
+    valor: visita.valor,
+    status: visita.status,
+    data_entrega: visita.data_entrega
+  });
+
+  mostrarToast("Resultados salvos com sucesso!");
+  fecharModalResultado();
+  renderizarTudo();
+}
+
+function renderizarResultados(){
+  const container = document.getElementById("lista-resultados");
+  const termoBusca = normalizarBusca(document.getElementById("busca-resultados")?.value);
+  const pacientes = mapaPacientes();
+
+  let filtrados = filtrarPorPeriodo(cacheVisitas, "resultados");
+
+  if(termoBusca){
+    filtrados = filtrados.filter(v=>{
+      const p = pacientes[v.paciente_id] || {};
+      return normalizarBusca(p.nome).includes(termoBusca) || normalizarBusca(p.cpf).includes(termoBusca);
+    });
+  }
+
+  filtrados = filtrados.sort((a,b)=> b.data_realizacao.localeCompare(a.data_realizacao));
+
+  if(filtrados.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum atendimento encontrado.</div>`;
+    return;
+  }
+
+  container.innerHTML = filtrados.map(v=>{
+    const p = pacientes[v.paciente_id] || {};
+    const pendentes = v.itens.filter(it => !it.resultado).length;
+    const resumo = v.itens.length === 0
+      ? "Nenhum exame selecionado"
+      : pendentes === 0
+        ? `Todos os ${v.itens.length} resultado(s) lançados`
+        : `${pendentes} de ${v.itens.length} exame(s) sem resultado`;
+    return `
+    <div class="exame-card">
+      <div>
+        <div class="exame-nome">${p.nome || "(paciente removido)"} <span class="badge-id">ID #${p.id ?? "-"}</span> <span class="badge status-${v.status}">${rotulosStatus[v.status]}</span></div>
+        <div class="exame-detalhe">Realização: ${formatarData(v.data_realizacao)} · ${v.itens.map(it=>it.nome).join(", ") || "-"}</div>
+        <div class="exame-detalhe">${resumo}</div>
+      </div>
+      <div class="exame-acoes">
+        <button class="icone" title="Lançar/editar resultados" onclick="abrirModalResultados(${v.id})">📝</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* EXAMES CATÁLOGO */
+function abrirModalExameCatalogo(id){
+  document.getElementById("modal-catalogo-msg").innerHTML = "";
+  document.getElementById("modal-catalogo-id").value = id || "";
+
+  if(id){
+    const exame = cacheCatalogo.find(e => e.id === id);
+    document.getElementById("modal-catalogo-titulo").textContent = "Editar exame";
+    document.getElementById("modal-catalogo-nome").value = exame.nome;
+    document.getElementById("modal-catalogo-preco").value = exame.preco;
+    document.getElementById("modal-catalogo-unidade").value = exame.unidade || "";
+    document.getElementById("modal-catalogo-referencia").value = exame.referencia || "";
+    document.getElementById("modal-catalogo-material").value = exame.material || "";
+    document.getElementById("modal-catalogo-metodo").value = exame.metodo || "";
+  } else {
+    document.getElementById("modal-catalogo-titulo").textContent = "Novo exame";
+    document.getElementById("modal-catalogo-nome").value = "";
+    document.getElementById("modal-catalogo-preco").value = "";
+    document.getElementById("modal-catalogo-unidade").value = "";
+    document.getElementById("modal-catalogo-referencia").value = "";
+    document.getElementById("modal-catalogo-material").value = "";
+    document.getElementById("modal-catalogo-metodo").value = "";
+  }
+
+  document.getElementById("modal-catalogo-overlay").classList.add("aberto");
+}
+
+function fecharModalCatalogo(){
+  document.getElementById("modal-catalogo-overlay").classList.remove("aberto");
+}
+
+async function salvarModalCatalogo(){
+  const id = document.getElementById("modal-catalogo-id").value;
+  const nome = document.getElementById("modal-catalogo-nome").value.trim();
+  const preco = parseFloat(document.getElementById("modal-catalogo-preco").value);
+  const unidade = document.getElementById("modal-catalogo-unidade").value.trim();
+  const referencia = document.getElementById("modal-catalogo-referencia").value.trim();
+  const material = document.getElementById("modal-catalogo-material").value.trim();
+  const metodo = document.getElementById("modal-catalogo-metodo").value.trim();
+
+  if(nome === ""){
+    document.getElementById("modal-catalogo-msg").innerHTML = `<div class="msg aviso">O nome do exame não pode estar vazio.</div>`;
+    return;
+  }
+  if(isNaN(preco) || preco < 0){
+    document.getElementById("modal-catalogo-msg").innerHTML = `<div class="msg aviso">Informe um preço válido.</div>`;
+    return;
+  }
+
+  if(id){
+    await editarExameCatalogo(parseInt(id,10), nome, preco, unidade, referencia, material, metodo);
+    mostrarToast("Exame editado com sucesso!");
+  } else {
+    await cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo);
+    mostrarToast("Exame cadastrado com sucesso!");
+  }
+
+  fecharModalCatalogo();
+  renderizarTudo();
+}
+
+async function excluirExameDoCatalogo(id){
+  const exame = cacheCatalogo.find(e => e.id === id);
+  if(!confirm(`Excluir o exame "${exame.nome}" do catálogo? Esta ação não pode ser desfeita.`)) return;
+  await excluirExameCatalogo(id);
+  mostrarToast("Exame excluído do catálogo!");
+  renderizarTudo();
+}
+
+function renderizarCatalogo(){
+  const container = document.getElementById("lista-catalogo");
+  const termoBusca = normalizarBusca(document.getElementById("busca-exames")?.value);
+
+  let filtrados = cacheCatalogo;
+  if(termoBusca){
+    filtrados = filtrados.filter(e => normalizarBusca(e.nome).includes(termoBusca));
+  }
+
+  if(filtrados.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum exame encontrado.</div>`;
+    return;
+  }
+
+  container.innerHTML = filtrados.map(e => {
+    const detalhes = [
+      e.unidade ? `Unidade: ${e.unidade}` : null,
+      e.referencia ? `Referência: ${e.referencia}` : null,
+      e.material ? `Material: ${e.material}` : null,
+      e.metodo ? `Método: ${e.metodo}` : null
+    ].filter(Boolean).join(" · ");
+    return `
+    <div class="exame-card">
+      <div>
+        <div class="exame-nome">${e.nome}</div>
+        ${detalhes ? `<div class="exame-detalhe">${detalhes}</div>` : `<div class="exame-detalhe">Unidade, referência, material e método ainda não preenchidos.</div>`}
+      </div>
+      <div class="exame-valor">${formatarMoeda(e.preco)}</div>
+      <div class="exame-acoes">
+        <button class="icone" title="Editar" onclick="abrirModalExameCatalogo(${e.id})">✏️</button>
+        <button class="icone excluir" title="Excluir" onclick="excluirExameDoCatalogo(${e.id})">🗑️</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* RELATÓRIO FINANCEIRO */
+function numeroSemana(dataStr){
+  const data = new Date(dataStr + "T00:00:00");
+  const inicioAno = new Date(data.getFullYear(), 0, 1);
+  const dias = Math.floor((data - inicioAno) / 86400000);
+  const semana = Math.ceil((dias + inicioAno.getDay() + 1) / 7);
+  return `Sem. ${semana}/${data.getFullYear()}`;
+}
+
+function agruparExames(visitas, tipo){
+  const grupos = {};
+  visitas.forEach(v=>{
+    const d = new Date(v.data_realizacao + "T00:00:00");
+    let chave;
+    if(tipo === "dia") chave = formatarData(v.data_realizacao);
+    else if(tipo === "semana") chave = numeroSemana(v.data_realizacao);
+    else if(tipo === "mes") chave = `${mesesAbrev[d.getMonth()]}/${d.getFullYear()}`;
+    else chave = `${d.getFullYear()}`;
+
+    if(!grupos[chave]) grupos[chave] = { total: 0, quantidade: 0, ordenacao: d.getTime() };
+    grupos[chave].total += v.valor;
+    grupos[chave].quantidade += 1;
+  });
+  return Object.entries(grupos).sort((a,b)=> a[1].ordenacao - b[1].ordenacao);
+}
+
+function renderizarFinanceiro(){
+  const container = document.getElementById("financeiro-conteudo");
+  const filtrados = filtrarPorPeriodo(cacheVisitas, "financeiro");
+
+  if(filtrados.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum exame encontrado para o período selecionado.</div>`;
+    return;
+  }
+
+  const totalArrecadado = filtrados.reduce((s,v)=> s + v.valor, 0);
+  const quantidade = filtrados.length;
+  const tipoAgrupamento = document.getElementById("agrupar-por").value;
+  const grupos = agruparExames(filtrados, tipoAgrupamento);
+  const maiorTotal = Math.max(...grupos.map(g => g[1].total));
+
+  let html = `
+    <div class="metricas">
+      <div class="metrica"><div class="valor">${formatarMoeda(totalArrecadado)}</div><div class="rotulo">Total arrecadado</div></div>
+      <div class="metrica"><div class="valor">${quantidade}</div><div class="rotulo">Quantidade de atendimentos</div></div>
+    </div>
+    <hr class="divisor">
+    <h3 class="subtitulo">Arrecadação por ${tipoAgrupamento === "dia" ? "dia" : tipoAgrupamento === "semana" ? "semana" : tipoAgrupamento === "mes" ? "mês" : "ano"}</h3>
+  `;
+
+  grupos.forEach(([chave, dados])=>{
+    const largura = (dados.total / maiorTotal) * 100;
+    html += `
+      <div class="barra-linha">
+        <div class="barra-topo"><span>${chave} <span style="color:var(--texto-suave);">(${dados.quantidade} exame${dados.quantidade>1?"s":""})</span></span><b>${formatarMoeda(dados.total)}</b></div>
+        <div class="barra-fundo"><div class="barra-preenchida" style="width:${largura}%;"></div></div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+/* PORTAL PACIENTE */
+function renderizarPortalPaciente(paciente){
+  const container = document.getElementById("portal-lista-visitas");
+  const minhas = cacheVisitas
+    .filter(v => v.paciente_id === paciente.id)
+    .sort((a,b)=> b.data_realizacao.localeCompare(a.data_realizacao));
+
+  if(minhas.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum exame encontrado para este cadastro.</div>`;
+    return;
+  }
+
+  const catalogo = mapaCatalogo();
+  container.innerHTML = minhas.map(v=>{
+    const linhas = v.itens.map(it=>{
+      const c = catalogo[it.nome] || {};
+      const resultado = v.status === "concluido" ? (it.resultado || "-") : "Aguardando";
+      return `<tr><td>${it.nome}</td><td>${resultado}</td><td>${c.unidade || "-"}</td><td>${c.referencia || "-"}</td></tr>`;
+    }).join("");
+    const btnRecibo = v.status === "concluido"
+      ? `<button class="secundario" onclick="emitirRecibo(${v.id})">🧾 Ver recibo</button>`
+      : "";
+    return `
+      <div class="visita-card">
+        <div class="exame-nome">Realizado em ${formatarData(v.data_realizacao)} <span class="badge status-${v.status}">${rotulosStatus[v.status]}</span></div>
+        <table class="tabela-resultados">
+          <thead><tr><th>Exame</th><th>Resultado</th><th>Unidade</th><th>Referência</th></tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+        <div style="margin-top:10px;">${btnRecibo}</div>
+      </div>`;
+  }).join("");
+}
+
+function renderizarTudo(){
+  renderizarInicio();
+  renderizarSobreNos();
+  renderizarListaPacientes();
+  renderizarResultados();
+  renderizarCatalogo();
+  renderizarFinanceiro();
+}
+
+document.getElementById("modal-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-overlay") fecharModal();
+});
+document.getElementById("modal-catalogo-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-catalogo-overlay") fecharModalCatalogo();
+});
+document.getElementById("modal-resultado-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-resultado-overlay") fecharModalResultado();
+});
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { 
+    getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch 
+  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+  // SUBSTITUA COM AS CHAVES REAIS DO SEU PROJETO
+  const firebaseConfig = {
+    apiKey: "SUA_API_KEY_REAL",
+    authDomain: "seu-projeto.firebaseapp.com",
+    projectId: "seu-projeto-id",
+    storageBucket: "seu-projeto.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abcdef"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Torna as funções globais para o restante do script usar
+  window.db = db;
+  window.salvarPacienteAsync = async function(paciente) {
+    const ref = doc(db, "pacientes", String(paciente.id));
+    await setDoc(ref, paciente, { merge: true });
+  };
+  window.salvarVisitaAsync = async function(visita) {
+    const ref = doc(db, "visitas", String(visita.id));
+    await setDoc(ref, visita, { merge: true });
+  };
+</script>
+
+<script>
+async function salvarModal() {
+  const idVisita = document.getElementById("modal-id").value;
+  const nome = document.getElementById("modal-nome").value.trim();
+  const cpf = document.getElementById("modal-cpf").value.trim();
+  const endereco = document.getElementById("modal-endereco").value.trim();
+  const nascimento = document.getElementById("modal-nascimento").value;
+  const realizacao = document.getElementById("modal-realizacao").value;
+  const telefone = document.getElementById("modal-numero").value.trim();
+  const convenio = document.getElementById("modal-convenio").value.trim() || "Particular";
+  const usuario = document.getElementById("modal-usuario").value.trim();
+  const senha = document.getElementById("modal-senha").value;
+  const status = document.getElementById("modal-status").value;
+  const selecionados = lerSelecionadosModal();
+  const msg = document.getElementById("modal-msg");
+
+  if (nome === "") {
+    msg.innerHTML = `<div class="msg aviso">O nome do paciente não pode estar vazio.</div>`;
+    return;
+  }
+  if (selecionados.length === 0) {
+    msg.innerHTML = `<div class="msg aviso">Selecione pelo menos um exame.</div>`;
+    return;
+  }
+
+  const idVinculado = document.getElementById("modal-paciente-vinculado").value;
+  
+  // Localiza ou cria o paciente de forma assíncrona no Firebase
+  const pacienteId = await localizarOuCriarPaciente(
+    { nome, cpf, endereco, nascimento, telefone, convenio, usuario, senha },
+    idVinculado ? parseInt(idVinculado, 10) : null
+  );
+
+  const mapaPrecos = obterMapaExames();
+  const itens = selecionados.map(n => ({ 
+    nome: n, 
+    preco: mapaPrecos[n] || 0, 
+    resultado: resultadosExistentes[n] || "" 
+  }));
+  const total = itens.reduce((s, it) => s + it.preco, 0);
+
+  const dados = {
+    paciente_id: pacienteId,
+    data_realizacao: realizacao,
+    itens,
+    valor: total,
+    status,
+    data_entrega: null
+  };
+
+  // Salva ou atualiza a visita/atendimento
+  if (idVisita) {
+    const anterior = cacheVisitas.find(v => v.id === parseInt(idVisita, 10));
+    dados.data_entrega = anterior ? anterior.data_entrega : null;
+    await editarVisitaBD(parseInt(idVisita, 10), dados);
+    mostrarToast("Atendimento atualizado com sucesso!");
+  } else {
+    await cadastrarVisitaBD(dados);
+    mostrarToast("Atendimento cadastrado com sucesso!");
+  }
+
+  fecharModal();
+  renderizarTudo();
+}
+</script>
+</body>
+</html>
