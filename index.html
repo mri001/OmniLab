@@ -5,9 +5,242 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="style.css">
 <title>Sistema OmniLab</title>
+
+<!-- ===== FIREBASE SDK E CONFIGURAÇÃO ÚNICA ===== -->
+<script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+      import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+      import { 
+        getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch 
+      } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+      // Configuração real do projeto OmniLab
+      const firebaseConfig = {
+        apiKey: "AIzaSyA_dIav9z30uw1oigo_5XoQL2TH2CiWdMA",
+        authDomain: "omni-ef6b1.firebaseapp.com",
+        projectId: "omni-ef6b1",
+        storageBucket: "omni-ef6b1.firebasestorage.app",
+        messagingSenderId: "6821845887",
+        appId: "1:6821845887:web:ca11e04648a4dfb349184a",
+        measurementId: "G-B1S3WMX37D"
+      };
+
+      // Inicialização
+      const app = initializeApp(firebaseConfig);
+      const analytics = getAnalytics(app);
+      const db = getFirestore(app);
+
+      // Disponibilizando globalmente
+      window.db = db;
+      window.fs = { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch };
+
+      // ===== MULTI-EQUIPE (TENANTS) =====
+      // Cada equipe/laboratório (gestor) tem seus próprios pacientes, visitas e
+      // catálogo guardados dentro de tenants/{tenantId}/... — isolados uns dos outros.
+      window.tenantAtual = null;
+      function colTenant(nome){
+        return collection(db, "tenants", window.tenantAtual, nome);
+      }
+      function docTenant(nome, id){
+        return doc(db, "tenants", window.tenantAtual, nome, String(id));
+      }
+
+      // Funções assíncronas do Firestore (escopadas à equipe logada)
+      window.salvarPacienteAsync = async function(paciente) {
+        await setDoc(docTenant("pacientes", paciente.id), paciente, { merge: true });
+      };
+
+      window.buscarPacienteAsync = async function(id) {
+        const snap = await getDoc(docTenant("pacientes", id));
+        return snap.exists() ? snap.data() : null;
+      };
+
+      window.salvarVisitaAsync = async function(visita) {
+        await setDoc(docTenant("visitas", visita.id), visita, { merge: true });
+      };
+
+      window.listarPacientesAsync = async function() {
+        const snap = await getDocs(colTenant("pacientes"));
+        const lista = [];
+        snap.forEach(d => lista.push(d.data()));
+        return lista;
+      };
+
+      window.listarVisitasAsync = async function() {
+        const snap = await getDocs(colTenant("visitas"));
+        const lista = [];
+        snap.forEach(d => {
+          const v = d.data();
+          if(!v.status) v.status = "criado";
+          if(!v.itens) v.itens = [];
+          lista.push(v);
+        });
+        return lista;
+      };
+
+      window.excluirVisitaAsync = async function(id) {
+        await deleteDoc(docTenant("visitas", id));
+      };
+
+      window.listarCatalogoAsync = async function() {
+        const snap = await getDocs(colTenant("catalogo"));
+        const lista = [];
+        snap.forEach(d => lista.push(d.data()));
+        return lista.sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR"));
+      };
+
+      window.salvarExameCatalogoAsync = async function(exame) {
+        await setDoc(docTenant("catalogo", exame.id), exame, { merge: true });
+      };
+
+      window.excluirExameCatalogoAsync = async function(id) {
+        await deleteDoc(docTenant("catalogo", id));
+      };
+
+      // ===== GESTORES (contas que administram cada equipe) =====
+      window.buscarGestorAsync = async function(usuario) {
+        const q = query(collection(db, "gestores"), where("usuario", "==", usuario));
+        const snap = await getDocs(q);
+        if (snap.empty) return null;
+        const d = snap.docs[0];
+        return { docId: d.id, ...d.data() };
+      };
+
+      window.listarGestoresAsync = async function() {
+        const snap = await getDocs(collection(db, "gestores"));
+        const lista = [];
+        snap.forEach(d => lista.push({ docId: d.id, ...d.data() }));
+        return lista;
+      };
+
+      window.criarGestorAsync = async function(gestor) {
+        const ref = doc(collection(db, "gestores"));
+        await setDoc(ref, gestor);
+        return ref.id;
+      };
+
+      window.excluirGestorAsync = async function(docId) {
+        await deleteDoc(doc(db, "gestores", docId));
+      };
+
+      // Apaga todos os dados (pacientes, visitas, catálogo) de uma equipe
+      window.excluirTenantAsync = async function(tenantId) {
+        const colecoes = ["pacientes", "visitas", "catalogo"];
+        for (const nome of colecoes) {
+          const snap = await getDocs(collection(db, "tenants", tenantId, nome));
+          if (snap.empty) continue;
+          const batch = writeBatch(db);
+          snap.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      };
+
+      // ===== ÍNDICE GLOBAL DE LOGIN DE PACIENTES =====
+      // Como o login do paciente não informa a qual equipe ele pertence, este
+      // índice (fora de qualquer tenant) guarda usuário -> {tenantId, pacienteId}.
+      window.upsertIndicePacienteAsync = async function(usuarioLogin, tenantId, pacienteId) {
+        if (!usuarioLogin) return;
+        await setDoc(doc(db, "indice_pacientes", usuarioLogin), { tenantId, pacienteId });
+      };
+
+      window.buscarIndicePacienteAsync = async function(usuarioLogin) {
+        const snap = await getDoc(doc(db, "indice_pacientes", usuarioLogin));
+        return snap.exists() ? snap.data() : null;
+      };
+
+      // Migração automática do LocalStorage para o Firestore (dados soltos, sem equipe)
+      window.migrarLocalStorageParaFirestore = async function() {
+        if (localStorage.getItem("omnilab_firebase_migrado")) return;
+        try {
+          const batch = writeBatch(db);
+
+          const catalogoLocal = JSON.parse(localStorage.getItem("omnilab_catalogo") || "[]");
+          catalogoLocal.forEach(exame => {
+            batch.set(doc(db, "catalogo", String(exame.id)), exame);
+          });
+
+          const pacientesLocais = JSON.parse(localStorage.getItem("omnilab_pacientes") || "[]");
+          pacientesLocais.forEach(paciente => {
+            batch.set(doc(db, "pacientes", String(paciente.id)), paciente);
+          });
+
+          const visitasLocais = JSON.parse(localStorage.getItem("omnilab_visitas") || "[]");
+          visitasLocais.forEach(visita => {
+            batch.set(doc(db, "visitas", String(visita.id)), visita);
+          });
+
+          await batch.commit();
+          localStorage.setItem("omnilab_firebase_migrado", "1");
+          console.log("Migração para o Firebase realizada com sucesso!");
+        } catch(e) {
+          console.error("Erro na migração para o Firebase:", e);
+        }
+      };
+
+      // Migração para o modelo de equipes (tenants): move os dados soltos
+      // (coleções pacientes/visitas/catalogo na raiz) para tenants/codoense/...,
+      // cria o gestor da equipe original (login que já existia: ADILSON / 192027)
+      // e cria o gestor administrador Nostradamus, que pode criar/excluir equipes.
+      window.migrarParaTenantsAsync = async function() {
+        if (localStorage.getItem("omnilab_tenants_migrado")) return;
+        try {
+          const TENANT_PADRAO = "codoense";
+
+          const gestorExistente = await window.buscarGestorAsync("ADILSON");
+          if (!gestorExistente) {
+            await window.criarGestorAsync({
+              usuario: "ADILSON", senha: "192027", nome: "Laboratório Codoense",
+              tenantId: TENANT_PADRAO, superAdmin: false, criadoEm: new Date().toISOString()
+            });
+          }
+
+          const adminExistente = await window.buscarGestorAsync("Nostradamus");
+          if (!adminExistente) {
+            await window.criarGestorAsync({
+              usuario: "Nostradamus", senha: "rei do vigil", nome: "Nostradamus",
+              tenantId: TENANT_PADRAO, superAdmin: true, criadoEm: new Date().toISOString()
+            });
+          }
+
+          const destinoSnap = await getDocs(collection(db, "tenants", TENANT_PADRAO, "pacientes"));
+          if (destinoSnap.empty) {
+            const batch = writeBatch(db);
+
+            const pacientesAntigos = await getDocs(collection(db, "pacientes"));
+            pacientesAntigos.forEach(d => batch.set(doc(db, "tenants", TENANT_PADRAO, "pacientes", d.id), d.data()));
+
+            const visitasAntigas = await getDocs(collection(db, "visitas"));
+            visitasAntigas.forEach(d => batch.set(doc(db, "tenants", TENANT_PADRAO, "visitas", d.id), d.data()));
+
+            const catalogoAntigo = await getDocs(collection(db, "catalogo"));
+            catalogoAntigo.forEach(d => batch.set(doc(db, "tenants", TENANT_PADRAO, "catalogo", d.id), d.data()));
+
+            await batch.commit();
+
+            // reconstrói o índice de login dos pacientes que já existiam
+            const pacientesMigrados = await getDocs(collection(db, "tenants", TENANT_PADRAO, "pacientes"));
+            const batchIndice = writeBatch(db);
+            pacientesMigrados.forEach(d => {
+              const p = d.data();
+              if (p.usuario) {
+                batchIndice.set(doc(db, "indice_pacientes", p.usuario), { tenantId: TENANT_PADRAO, pacienteId: p.id });
+              }
+            });
+            await batchIndice.commit();
+          }
+
+          localStorage.setItem("omnilab_tenants_migrado", "1");
+          console.log("Migração para equipes (tenants) concluída.");
+        } catch(e) {
+          console.error("Erro na migração para equipes:", e);
+        }
+      };
+
+      window.migrarLocalStorageParaFirestore().then(() => window.migrarParaTenantsAsync());
+</script>
+    
 </head>
 <body>
-
 <!-- ===== TELA DE LOGIN ===== -->
 <div id="tela-login">
   <div class="caixa-login">
@@ -20,7 +253,7 @@
     </div>
 
     <div id="form-login-equipe">
-      <input type="text" id="login-usuario" placeholder="Usuário" autocomplete="username">
+      <input type="text" id="login-usuario" placeholder="Usuário / E-mail" autocomplete="username">
       <input type="password" id="login-senha" placeholder="Senha" autocomplete="current-password">
       <button onclick="verificarLogin()">Entrar</button>
       <p id="login-erro"></p>
@@ -41,7 +274,7 @@
 <header>
   <div>
     <h1 id="cabecalho-nome">Sistema OmniLab</h1>
-    <p>Dr Adilson Guimarães Junior</p>
+    <p id="cabecalho-subtitulo">Dr Adilson Guimarães Junior</p>
   </div>
   <nav class="tabs">
     <button data-aba="inicio" class="ativa">Início</button>
@@ -50,6 +283,7 @@
     <button data-aba="exames">Exames</button>
     <button data-aba="financeiro">Relatório Financeiro</button>
     <button data-aba="sobrenos">Sobre Nós</button>
+    <button data-aba="equipes" id="btn-tab-equipes" style="display:none;">Equipes</button>
   </nav>
   <button id="btn-sair" onclick="sair()">Sair</button>
 </header>
@@ -62,7 +296,6 @@
       <h2 class="titulo-aba" id="inicio-nome"></h2>
       <div id="inicio-slogan" style="color:var(--azul); font-size:0.95rem; margin-top:2px;"></div>
       <p id="inicio-sobre" style="line-height:1.6; font-size:0.93rem;"></p>
-      <div id="inicio-contato"></div>
     </div>
     <div class="card">
       <h2 class="titulo-aba">Tabela de Exames</h2>
@@ -75,7 +308,7 @@
     <div class="card">
       <div class="cabecalho-aba">
         <h2 class="titulo-aba">Pacientes</h2>
-        <button class="acao" onclick="abrirModalPaciente()">+ Novo atendimento</button>
+        <button class="acao" onclick="abrirModalEscolha()">+ Novo atendimento</button>
       </div>
 
       <div class="busca-linha">
@@ -185,6 +418,20 @@
     <div class="card">
       <h2 class="titulo-aba">Sobre Nós</h2>
       <div id="sobrenos-conteudo"></div>
+    </div>
+  </section>
+
+  <!-- EQUIPES (somente para o gestor administrador) -->
+  <section class="aba" id="aba-equipes">
+    <div class="card">
+      <div class="cabecalho-aba">
+        <h2 class="titulo-aba">Equipes</h2>
+        <button class="acao" onclick="abrirModalEquipe()">+ Nova equipe</button>
+      </div>
+      <div class="aviso-config">
+        Cada equipe tem seu próprio cadastro de pacientes, exames, resultados e financeiro, totalmente isolado das demais.
+      </div>
+      <div id="lista-equipes"></div>
     </div>
   </section>
 
@@ -313,6 +560,67 @@
   </div>
 </div>
 
+<!-- MODAL NOVA EQUIPE -->
+<div class="modal-overlay" id="modal-equipe-overlay">
+  <div class="modal">
+    <h3>Nova equipe</h3>
+
+    <label for="modal-equipe-nome">Nome da equipe / laboratório</label>
+    <input type="text" id="modal-equipe-nome" placeholder="Ex.: Laboratório Central">
+
+    <label for="modal-equipe-usuario">Usuário de login</label>
+    <input type="text" id="modal-equipe-usuario" placeholder="Usado para entrar como Equipe">
+
+    <label for="modal-equipe-senha">Senha</label>
+    <input type="text" id="modal-equipe-senha" placeholder="Defina uma senha para essa equipe">
+
+    <div id="modal-equipe-msg"></div>
+
+    <div class="modal-botoes">
+      <button class="acao" onclick="salvarEquipe()">Salvar</button>
+      <button class="secundario" onclick="fecharModalEquipe()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ESCOLHA: NOVO PACIENTE OU JÁ CADASTRADO -->
+<div class="modal-overlay" id="modal-escolha-overlay">
+  <div class="modal">
+    <h3>Novo atendimento</h3>
+    <p class="info-auxiliar">O paciente já tem cadastro no sistema?</p>
+    <div class="modal-botoes" style="flex-direction:column;">
+      <button class="acao" onclick="fecharModalEscolha(); abrirModalListaPacientes();">📋 Paciente já cadastrado</button>
+      <button class="secundario" onclick="fecharModalEscolha(); abrirModalPaciente();">🆕 Novo paciente</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LISTA DE PACIENTES JÁ CADASTRADOS -->
+<div class="modal-overlay" id="modal-lista-pacientes-overlay">
+  <div class="modal">
+    <h3>Selecionar paciente</h3>
+    <div class="busca-linha">
+      <input type="text" id="busca-lista-pacientes" placeholder="Buscar por nome ou CPF..." oninput="renderizarListaSelecaoPacientes()">
+    </div>
+    <div id="lista-selecao-pacientes"></div>
+    <div class="modal-botoes">
+      <button class="secundario" onclick="fecharModalListaPacientes()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VISUALIZAR PACIENTE E RESULTADOS -->
+<div class="modal-overlay" id="modal-visualizar-overlay">
+  <div class="modal">
+    <h3 id="visualizar-titulo">Visualizar</h3>
+    <div id="visualizar-conteudo"></div>
+    <div class="modal-botoes">
+      <button class="acao" id="visualizar-btn-imprimir" onclick="">🖨️ Imprimir recibo</button>
+      <button class="secundario" onclick="fecharVisualizacao()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 </div> <!-- fim #app-conteudo -->
@@ -336,58 +644,47 @@
 
 <script>
 /* =========================================================
-   LOGIN — equipe e paciente
+   LOGIN — equipe e paciente com Firestore/Cache
    ========================================================= */
-   async function migrarLocalStorageParaFirestore() {
-  if (localStorage.getItem("omnilab_firebase_migrado")) {
-    console.log("Migração para o Firebase já foi realizada neste navegador.");
-    return;
-  }
+const LOGIN_SESSAO_KEY = "omnilab_logado";
+const LOGIN_GESTOR_USUARIO_KEY = "omnilab_gestor_usuario";
+const LOGIN_PACIENTE_SESSAO_KEY = "omnilab_paciente_logado";
+const LOGIN_PACIENTE_TENANT_KEY = "omnilab_paciente_tenant";
 
-  console.log("Iniciando migração dos dados do LocalStorage para o Firebase Firestore...");
+// Gestor atualmente logado: { docId, usuario, nome, senha, tenantId, superAdmin }
+let gestorLogado = null;
 
-  try {
-    const batch = window.fs.writeBatch(window.db);
+// Cache em memória para rápida resposta do sistema
+let cachePacientes = [];
+let cacheVisitas = [];
+let cacheCatalogo = [];
 
-    // 1. Migrar Catálogo de Exames
-    const catalogoLocal = JSON.parse(localStorage.getItem("omnilab_catalogo") || "[]");
-    catalogoLocal.forEach(exame => {
-      const docRef = window.fs.doc(window.db, "catalogo", String(exame.id));
-      batch.set(docRef, exame);
-    });
-
-    // 2. Migrar Pacientes
-    const pacientesLocais = JSON.parse(localStorage.getItem("omnilab_pacientes") || "[]");
-    pacientesLocais.forEach(paciente => {
-      const docRef = window.fs.doc(window.db, "pacientes", String(paciente.id));
-      batch.set(docRef, paciente);
-    });
-
-    // 3. Migrar Atendimentos / Visitas
-    const visitasLocais = JSON.parse(localStorage.getItem("omnilab_visitas") || "[]");
-    visitasLocais.forEach(visita => {
-      const docRef = window.fs.doc(window.db, "visitas", String(visita.id));
-      batch.set(docRef, visita);
-    });
-
-    // Executa a gravação em lote
-    await batch.commit();
-
-    // Marcar como migrado para não repeti-lo
-    localStorage.setItem("omnilab_firebase_migrado", "true");
-    mostrarToast("Dados antigos migrados com sucesso para o Firebase!");
-    console.log("Migração concluída com sucesso.");
-
-  } catch (error) {
-    console.error("Erro ao migrar dados para o Firebase:", error);
+async function carregarDadosDoBanco() {
+  if (window.listarPacientesAsync) {
+    try {
+      cachePacientes = await window.listarPacientesAsync();
+      cacheVisitas = await window.listarVisitasAsync();
+      cacheCatalogo = await window.listarCatalogoAsync();
+      if (cachePacientes.length === 0 && cacheVisitas.length === 0) {
+        migrarDadosAntigos();
+        cachePacientes = listarPacientes();
+        cacheVisitas = listarVisitas();
+        cacheCatalogo = listarCatalogo();
+      }
+    } catch(e) {
+      console.warn("Usando localStorage como fallback:", e);
+      migrarDadosAntigos();
+      cachePacientes = listarPacientes();
+      cacheVisitas = listarVisitas();
+      cacheCatalogo = listarCatalogo();
+    }
+  } else {
+    migrarDadosAntigos();
+    cachePacientes = listarPacientes();
+    cacheVisitas = listarVisitas();
+    cacheCatalogo = listarCatalogo();
   }
 }
-const CREDENCIAIS = {
-  usuario: "ADILSON",
-  senha: "192027"
-};
-const LOGIN_SESSAO_KEY = "omnilab_logado";
-const LOGIN_PACIENTE_SESSAO_KEY = "omnilab_paciente_logado";
 
 function mudarTipoLogin(tipo){
   const eEquipe = tipo === "equipe";
@@ -397,43 +694,80 @@ function mudarTipoLogin(tipo){
   document.getElementById("form-login-paciente").style.display = eEquipe ? "none" : "block";
 }
 
-function verificarLogin(){
+async function verificarLogin(){
   const usuario = document.getElementById("login-usuario").value.trim();
   const senha = document.getElementById("login-senha").value;
   const erro = document.getElementById("login-erro");
+  erro.textContent = "";
 
-  if(usuario.toUpperCase() === CREDENCIAIS.usuario && senha === CREDENCIAIS.senha){
+  if(!window.buscarGestorAsync){
+    erro.textContent = "Sistema ainda carregando, tente novamente em instantes.";
+    return;
+  }
+
+  const gestor = await window.buscarGestorAsync(usuario);
+  if(gestor && gestor.senha === senha){
+    gestorLogado = gestor;
+    window.tenantAtual = gestor.tenantId;
     sessionStorage.setItem(LOGIN_SESSAO_KEY, "1");
+    sessionStorage.setItem(LOGIN_GESTOR_USUARIO_KEY, gestor.usuario);
     entrarNoSistema();
   } else {
     erro.textContent = "Usuário ou senha incorretos.";
   }
 }
 
-function entrarNoSistema(){
+async function entrarNoSistema(){
   document.getElementById("tela-login").style.display = "none";
   document.getElementById("portal-paciente").style.display = "none";
   document.getElementById("app-conteudo").style.display = "block";
+
+  const eAdmin = !!(gestorLogado && gestorLogado.superAdmin);
+  document.getElementById("btn-tab-equipes").style.display = eAdmin ? "inline-block" : "none";
+  const subtitulo = document.getElementById("cabecalho-subtitulo");
+  if(subtitulo) subtitulo.textContent = gestorLogado ? `Equipe: ${gestorLogado.nome || gestorLogado.usuario}` : "";
+
+  await carregarDadosDoBanco();
   renderizarTudo();
 }
 
 function sair(){
   sessionStorage.removeItem(LOGIN_SESSAO_KEY);
+  sessionStorage.removeItem(LOGIN_GESTOR_USUARIO_KEY);
+  gestorLogado = null;
+  window.tenantAtual = null;
   document.getElementById("app-conteudo").style.display = "none";
   document.getElementById("tela-login").style.display = "flex";
   document.getElementById("login-usuario").value = "";
   document.getElementById("login-senha").value = "";
 }
 
-function verificarLoginPaciente(){
+async function verificarLoginPaciente(){
   const usuario = document.getElementById("login-paciente-usuario").value.trim();
   const senha = document.getElementById("login-paciente-senha").value;
   const erro = document.getElementById("login-paciente-erro");
-  const paciente = listarPacientes().find(p => p.usuario && p.usuario === usuario && p.senha === senha);
+  erro.textContent = "";
+
+  if(!window.buscarIndicePacienteAsync){
+    erro.textContent = "Sistema ainda carregando, tente novamente em instantes.";
+    return;
+  }
+
+  const indice = await window.buscarIndicePacienteAsync(usuario);
+  if(!indice){
+    erro.textContent = "Usuário ou senha incorretos.";
+    return;
+  }
+
+  window.tenantAtual = indice.tenantId;
+  await carregarDadosDoBanco();
+  const paciente = cachePacientes.find(p => p.id === indice.pacienteId && p.usuario === usuario && p.senha === senha);
   if(paciente){
     sessionStorage.setItem(LOGIN_PACIENTE_SESSAO_KEY, String(paciente.id));
+    sessionStorage.setItem(LOGIN_PACIENTE_TENANT_KEY, indice.tenantId);
     entrarPortalPaciente(paciente);
   } else {
+    window.tenantAtual = null;
     erro.textContent = "Usuário ou senha incorretos.";
   }
 }
@@ -454,7 +788,7 @@ function sairPortalPaciente(){
   document.getElementById("login-paciente-senha").value = "";
 }
 
-document.addEventListener("DOMContentLoaded", ()=>{
+document.addEventListener("DOMContentLoaded", async ()=>{
   document.getElementById("login-senha").addEventListener("keydown", (e)=>{
     if(e.key === "Enter") verificarLogin();
   });
@@ -462,52 +796,46 @@ document.addEventListener("DOMContentLoaded", ()=>{
     if(e.key === "Enter") verificarLoginPaciente();
   });
 
+  // Restaura sessão de paciente (se houver)
   const idPacienteSessao = sessionStorage.getItem(LOGIN_PACIENTE_SESSAO_KEY);
-  if(idPacienteSessao){
-    const paciente = listarPacientes().find(p => p.id === parseInt(idPacienteSessao, 10));
+  const tenantPacienteSessao = sessionStorage.getItem(LOGIN_PACIENTE_TENANT_KEY);
+  if(idPacienteSessao && tenantPacienteSessao){
+    window.tenantAtual = tenantPacienteSessao;
+    await carregarDadosDoBanco();
+    const paciente = cachePacientes.find(p => p.id === parseInt(idPacienteSessao, 10));
     if(paciente){ entrarPortalPaciente(paciente); return; }
+    window.tenantAtual = null;
   }
-  if(sessionStorage.getItem(LOGIN_SESSAO_KEY) === "1"){
-    entrarNoSistema();
+
+  // Restaura sessão de equipe (se houver)
+  const usuarioGestorSessao = sessionStorage.getItem(LOGIN_GESTOR_USUARIO_KEY);
+  if(sessionStorage.getItem(LOGIN_SESSAO_KEY) === "1" && usuarioGestorSessao && window.buscarGestorAsync){
+    const gestor = await window.buscarGestorAsync(usuarioGestorSessao);
+    if(gestor){
+      gestorLogado = gestor;
+      window.tenantAtual = gestor.tenantId;
+      entrarNoSistema();
+    }
   }
 });
 
-/* =========================================================
-   CONFIGURAÇÃO — informações do laboratório
-   ========================================================= */
+/* CONFIGURAÇÕES */
 const CONFIG = {
   inicio: {
     nomeLaboratorio: "OmniLab",
     slogan: "Cuidando da sua saúde com precisão, agilidade e confiança",
     sobre: "Rede de laboratórios parceiros trazendo qualidade, saúde e bons custos para a população.",
-    horario: "Segunda a sexta: 07h às 18h · Sábado: 07h às 11h",
-    endereco: "Travessa Zacarias Cardoso, 216B, Sala 02 — Centro, Codó - MA",
-    telefone: "(99) 98152-3560",
   },
-  dadosLegais: {
-    "Razão social": "OmniLab — Laboratório Codoense",
-    "Responsável técnico": "Adilson Guimarães Junior",
-    "Endereço": "Travessa Zacarias Cardoso, 216B, Sala 02 — Centro, Codó - MA",
-    "Telefone": "(99) 98152-3560 / (99) 98214-7691",
-    "WhatsApp": "(99) 98155-3206 / (99) 98809-0978",
-    "Instagram": "@laboratoriocodoense"
-  },
-  // Coloque aqui a URL pública do sistema depois de publicá-lo (ex.: https://omnilab.seudominio.com).
-  // Enquanto estiver vazia, o recibo não mostra o link nem o QR code de acesso.
-  portalUrl: "",
+  portalUrl: "https://mri001.github.io/OmniLab/",
   sobreNos: {
-    // Texto de exemplo — edite com a história real do laboratório.
-    texto: "A OmniLab nasceu da vontade de levar exames laboratoriais de confiança a mais famílias, unindo anos de experiência clínica a uma forma simples e direta de atender cada paciente. O nome OmniLab representa esse próximo passo: um sistema pensado para atender não apenas um laboratório, mas uma rede de laboratórios parceiros, mantendo o mesmo cuidado e a mesma atenção de sempre. [Edite este texto com a história real: quando o laboratório começou, o que motivou sua criação e os valores que guiam o atendimento até hoje.]",
-    assinatura: "Fundado por Dr. Adilson Guimarães Junior."
+    texto: "A OmniLab nasceu da vontade de levar exames laboratoriais de confiança a mais famílias, unindo anos de experiência clínica a uma forma simples e direta de atender cada paciente. O sistema foi criado para que qualquer laboratório parceiro possa gerenciar pacientes, exames e resultados de forma organizada, mantendo cada equipe com seus próprios dados, isolados e seguros.",
+    assinatura: "Fundado por Iann Gustavo Borges Guimarães"
   }
 };
 
-/* =========================================================
-   MIGRAÇÃO — converte dados antigos (Laborclínica) para o novo modelo
-   ========================================================= */
+/* MIGRAÇÃO LOCALSTORAGE ANTIGA */
 function migrarDadosAntigos(){
   if(localStorage.getItem("omnilab_migrado")) return;
-
   const catalogoAntigo = localStorage.getItem("laborclinica_catalogo");
   if(catalogoAntigo && localStorage.getItem("omnilab_catalogo") === null){
     const lista = JSON.parse(catalogoAntigo).map(e => ({
@@ -515,47 +843,11 @@ function migrarDadosAntigos(){
       unidade: "", referencia: "", material: "", metodo: ""
     }));
     localStorage.setItem("omnilab_catalogo", JSON.stringify(lista));
-    const seq = localStorage.getItem("laborclinica_catalogo_seq");
-    if(seq) localStorage.setItem("omnilab_catalogo_seq", seq);
   }
-
-  const examesAntigos = localStorage.getItem("laborclinica_exames");
-  if(examesAntigos && localStorage.getItem("omnilab_visitas") === null){
-    const antigos = JSON.parse(examesAntigos);
-    const pacientes = [];
-    let pacSeq = 1;
-    const visitas = antigos.map(e => {
-      let pac = e.cpf ? pacientes.find(p => p.cpf === e.cpf) : null;
-      if(!pac){
-        pac = {
-          id: pacSeq++, nome: e.nome_paciente || "", cpf: e.cpf || "",
-          nascimento: e.data_nascimento || "", endereco: e.endereco || "",
-          telefone: e.telefone || "", convenio: "Particular",
-          usuario: e.cpf || ("paciente" + (pacSeq - 1)), senha: "1234"
-        };
-        pacientes.push(pac);
-      }
-      const nomes = (e.exames_feitos || "").split(",").map(s => s.trim()).filter(Boolean);
-      const itens = nomes.map(nome => ({ nome, preco: 0, resultado: "" }));
-      return {
-        id: e.id, paciente_id: pac.id, data_realizacao: e.data_realizacao,
-        itens, valor: e.valor, status: e.status || "criado", data_entrega: e.data_entrega || null
-      };
-    });
-    localStorage.setItem("omnilab_pacientes", JSON.stringify(pacientes));
-    localStorage.setItem("omnilab_pacientes_seq", String(pacSeq));
-    localStorage.setItem("omnilab_visitas", JSON.stringify(visitas));
-    const seqV = localStorage.getItem("laborclinica_seq");
-    if(seqV) localStorage.setItem("omnilab_visitas_seq", seqV);
-  }
-
   localStorage.setItem("omnilab_migrado", "1");
 }
-migrarDadosAntigos();
 
-/* =========================================================
-   BANCO DE DADOS — PACIENTES (cadastro único por CPF)
-   ========================================================= */
+/* BANCO DE DADOS — PACIENTES */
 const PACIENTES_KEY = "omnilab_pacientes";
 const PACIENTES_SEQ_KEY = "omnilab_pacientes_seq";
 
@@ -571,235 +863,155 @@ function listarPacientes(){
 }
 function salvarPacientes(lista){ localStorage.setItem(PACIENTES_KEY, JSON.stringify(lista)); }
 function proximoIdPaciente(){
-  conectaPacientes();
-  const atual = parseInt(localStorage.getItem(PACIENTES_SEQ_KEY), 10);
-  localStorage.setItem(PACIENTES_SEQ_KEY, String(atual + 1));
-  return atual;
+  const maxId = cachePacientes.reduce((m, p) => Math.max(m, p.id || 0), 0);
+  return maxId + 1;
 }
 function mapaPacientes(){
   const m = {};
-  listarPacientes().forEach(p => m[p.id] = p);
+  cachePacientes.forEach(p => m[p.id] = p);
   return m;
 }
-/* Localiza um paciente já cadastrado (por id vinculado ou por CPF) e
-   atualiza seus dados, ou cria um cadastro novo. Usado ao salvar um atendimento. */
-function localizarOuCriarPaciente(dados, idVinculado){
-  const lista = listarPacientes();
+
+async function localizarOuCriarPaciente(dados, idVinculado){
   let paciente = null;
-  if(idVinculado) paciente = lista.find(p => p.id === idVinculado);
-  if(!paciente && dados.cpf) paciente = lista.find(p => p.cpf && p.cpf === dados.cpf);
+  if(idVinculado) paciente = cachePacientes.find(p => p.id === idVinculado);
+  if(!paciente && dados.cpf) paciente = cachePacientes.find(p => p.cpf && p.cpf === dados.cpf);
 
   if(paciente){
     Object.assign(paciente, dados);
-    salvarPacientes(lista);
+    if (window.salvarPacienteAsync) await window.salvarPacienteAsync(paciente);
+    else {
+      const lista = listarPacientes();
+      const idx = lista.findIndex(p => p.id === paciente.id);
+      if(idx !== -1) lista[idx] = paciente;
+      salvarPacientes(lista);
+    }
+    if (window.upsertIndicePacienteAsync && paciente.usuario) {
+      await window.upsertIndicePacienteAsync(paciente.usuario, window.tenantAtual, paciente.id);
+    }
     return paciente.id;
   } else {
     const novoId = proximoIdPaciente();
-    lista.push({ id: novoId, ...dados });
-    salvarPacientes(lista);
+    const novoPac = { id: novoId, ...dados };
+    cachePacientes.push(novoPac);
+    if (window.salvarPacienteAsync) await window.salvarPacienteAsync(novoPac);
+    else {
+      const lista = listarPacientes();
+      lista.push(novoPac);
+      salvarPacientes(lista);
+    }
+    if (window.upsertIndicePacienteAsync && novoPac.usuario) {
+      await window.upsertIndicePacienteAsync(novoPac.usuario, window.tenantAtual, novoPac.id);
+    }
     return novoId;
   }
 }
 
-/* =========================================================
-   BANCO DE DADOS — VISITAS / ATENDIMENTOS (exames realizados)
-   ========================================================= */
+/* BANCO DE DADOS — VISITAS */
 const DB_KEY = "omnilab_visitas";
-const DB_SEQ_KEY = "omnilab_visitas_seq";
 
 function conectaBD(){
   if(localStorage.getItem(DB_KEY) === null){
     localStorage.setItem(DB_KEY, JSON.stringify([]));
-    localStorage.setItem(DB_SEQ_KEY, "1");
   }
 }
 function listarVisitas(){
   conectaBD();
-  const lista = JSON.parse(localStorage.getItem(DB_KEY));
-  lista.forEach(v => { if(!v.status) v.status = "criado"; if(!v.itens) v.itens = []; });
-  return lista;
+  return JSON.parse(localStorage.getItem(DB_KEY));
 }
-function salvarTabela(lista){ localStorage.setItem(DB_KEY, JSON.stringify(lista)); }
 function proximoId(){
-  conectaBD();
-  const atual = parseInt(localStorage.getItem(DB_SEQ_KEY), 10);
-  localStorage.setItem(DB_SEQ_KEY, String(atual + 1));
-  return atual;
+  const maxId = cacheVisitas.reduce((m, v) => Math.max(m, v.id || 0), 0);
+  return maxId + 1;
 }
-function cadastrarVisitaBD(dados){
-  const lista = listarVisitas();
-  lista.push({ id: proximoId(), ...dados });
-  salvarTabela(lista);
-}
-function editarVisitaBD(id, dados){
-  const lista = listarVisitas();
-  const idx = lista.findIndex(v => v.id === id);
-  if(idx !== -1){
-    lista[idx] = { id, ...dados };
-    salvarTabela(lista);
+
+async function cadastrarVisitaBD(dados){
+  const novaVisita = { id: proximoId(), ...dados };
+  cacheVisitas.push(novaVisita);
+  if (window.salvarVisitaAsync) await window.salvarVisitaAsync(novaVisita);
+  else {
+    const lista = listarVisitas();
+    lista.push(novaVisita);
+    localStorage.setItem(DB_KEY, JSON.stringify(lista));
   }
 }
-function excluirVisitaBD(id){
-  salvarTabela(listarVisitas().filter(v => v.id !== id));
+
+async function editarVisitaBD(id, dados){
+  const idx = cacheVisitas.findIndex(v => v.id === id);
+  if(idx !== -1){
+    cacheVisitas[idx] = { id, ...dados };
+    if (window.salvarVisitaAsync) await window.salvarVisitaAsync(cacheVisitas[idx]);
+    else {
+      const lista = listarVisitas();
+      const lIdx = lista.findIndex(v => v.id === id);
+      if(lIdx !== -1) lista[lIdx] = { id, ...dados };
+      localStorage.setItem(DB_KEY, JSON.stringify(lista));
+    }
+  }
 }
 
-/* =========================================================
-   BANCO DE DADOS — CATÁLOGO DE EXAMES
-   (nome / preço / unidade / valor de referência / material / método)
-   ========================================================= */
-const CATALOGO_KEY = "omnilab_catalogo";
-const CATALOGO_SEQ_KEY = "omnilab_catalogo_seq";
+async function excluirVisitaBD(id){
+  cacheVisitas = cacheVisitas.filter(v => v.id !== id);
+  if (window.excluirVisitaAsync) await window.excluirVisitaAsync(id);
+  else localStorage.setItem(DB_KEY, JSON.stringify(listarVisitas().filter(v => v.id !== id)));
+}
 
-const CATALOGO_INICIAL_BASE = [
-  { id: 1, nome: "Ácido Fólico", preco: 50.0 },
-  { id: 2, nome: "Ácido Úrico", preco: 10.0 },
-  { id: 3, nome: "Albúmina", preco: 15.0 },
-  { id: 4, nome: "Alfa Fetoproteína", preco: 50.0 },
-  { id: 5, nome: "ASLO / ASLO OU ASO", preco: 20.0 },
-  { id: 6, nome: "BAAR para Escarro ou Linfa", preco: 80.0 },
-  { id: 7, nome: "Basterioscopia Uretral ou Vaginal", preco: 30.0 },
-  { id: 8, nome: "Beta 2 Microglobulina", preco: 70.0 },
-  { id: 9, nome: "BHCG", preco: 15.0 },
-  { id: 10, nome: "Bilirrubina Total e Frações", preco: 25.0 },
-  { id: 11, nome: "BNP", preco: 310.0 },
-  { id: 12, nome: "CA 19-9", preco: 650.0 },
-  { id: 13, nome: "Cadeia Kappa", preco: 50.0 },
-  { id: 14, nome: "Cálcio", preco: 25.0 },
-  { id: 15, nome: "Cálcio Ionizado", preco: 40.0 },
-  { id: 16, nome: "Cardiolipina IGG/IGM", preco: 50.0 },
-  { id: 17, nome: "CEA", preco: 50.0 },
-  { id: 18, nome: "Chikungunya", preco: 250.0 },
-  { id: 19, nome: "Citomegalovírus IGG e IGM", preco: 60.0 },
-  { id: 20, nome: "Coagulograma", preco: 20.0 },
-  { id: 21, nome: "Colesterol Total", preco: 10.0 },
-  { id: 22, nome: "Contagem de Reticulócitos", preco: 40.0 },
-  { id: 23, nome: "CPK", preco: 60.0 },
-  { id: 24, nome: "CKMB", preco: 40.0 },
-  { id: 25, nome: "Creatinina", preco: 10.0 },
-  { id: 26, nome: "Cultura Secreção Uretral ou Vaginal", preco: 60.0 },
-  { id: 27, nome: "Cultura de Urina", preco: 100.0 },
-  { id: 28, nome: "Dengue", preco: 100.0 },
-  { id: 29, nome: "EAS", preco: 10.0 },
-  { id: 30, nome: "Eletroforese de Hemoglobina", preco: 50.0 },
-  { id: 31, nome: "EPF", preco: 10.0 },
-  { id: 32, nome: "EPF 3 AMOSTRAS", preco: 30.0 },
-  { id: 33, nome: "Estradiol", preco: 40.0 },
-  { id: 34, nome: "FAN", preco: 50.0 },
-  { id: 35, nome: "Fator Reumatóide ou Latex", preco: 20.0 },
-  { id: 36, nome: "Ferritina", preco: 40.0 },
-  { id: 37, nome: "Ferro", preco: 40.0 },
-  { id: 38, nome: "Fero TIBC", preco: 40.0 },
-  { id: 39, nome: "Fibrinogenio", preco: 50.0 },
-  { id: 40, nome: "Fosfatase Alcalina (FAL)", preco: 20.0 },
-  { id: 41, nome: "FSH", preco: 40.0 },
-  { id: 42, nome: "Gama GT (GGT)", preco: 25.0 },
-  { id: 43, nome: "Gastrina", preco: 70.0 },
-  { id: 44, nome: "Glicemia", preco: 10.0 },
-  { id: 45, nome: "HBSAG", preco: 40.0 },
-  { id: 46, nome: "HCV", preco: 40.0 },
-  { id: 47, nome: "Hemograma", preco: 10.0 },
-  { id: 48, nome: "Hemoglobina Glicosilada", preco: 30.0 },
-  { id: 49, nome: "HIV", preco: 50.0 },
-  { id: 50, nome: "IgE Total", preco: 50.0 },
-  { id: 51, nome: "Imunofixação de Proteínas", preco: 250.0 },
-  { id: 52, nome: "Imunoglobulina IgA", preco: 50.0 },
-  { id: 53, nome: "Imunoglobulina IgE", preco: 50.0 },
-  { id: 54, nome: "Imunoglobulina IgG", preco: 50.0 },
-  { id: 55, nome: "Imunoglobulina IgM", preco: 25.0 },
-  { id: 56, nome: "Latex-Fator Reumatóide", preco: 20.0 },
-  { id: 57, nome: "LDH", preco: 40.0 },
-  { id: 58, nome: "LH", preco: 40.0 },
-  { id: 59, nome: "Lipase", preco: 40.0 },
-  { id: 60, nome: "Lipidograma", preco: 30.0 },
-  { id: 61, nome: "Magnésio", preco: 25.0 },
-  { id: 62, nome: "Micológico Direto da Pele", preco: 50.0 },
-  { id: 63, nome: "PCR", preco: 20.0 },
-  { id: 64, nome: "Potássio", preco: 25.0 },
-  { id: 65, nome: "Prevenção", preco: 60.0 },
-  { id: 66, nome: "Progesterona", preco: 40.0 },
-  { id: 67, nome: "Prolactina", preco: 40.0 },
-  { id: 68, nome: "Proteínas Totais e Frações", preco: 25.0 },
-  { id: 69, nome: "Proteína Urinária 24 h", preco: 60.0 },
-  { id: 70, nome: "PSA Livre", preco: 30.0 },
-  { id: 71, nome: "PSA Total", preco: 30.0 },
-  { id: 72, nome: "PSA Totale Livre", preco: 50.0 },
-  { id: 73, nome: "Rubéola IgG e IgM", preco: 60.0 },
-  { id: 74, nome: "Sódio", preco: 25.0 },
-  { id: 75, nome: "Sorologia para Lues (VDRL)", preco: 10.0 },
-  { id: 76, nome: "T3", preco: 25.0 },
-  { id: 77, nome: "T3 Livre", preco: 30.0 },
-  { id: 78, nome: "T3 L", preco: 30.0 },
-  { id: 79, nome: "T3 ou T3 Total", preco: 30.0 },
-  { id: 80, nome: "T4", preco: 30.0 },
-  { id: 81, nome: "T4 L", preco: 30.0 },
-  { id: 82, nome: "T4 Livre", preco: 30.0 },
-  { id: 83, nome: "T4 ou T4 Total", preco: 30.0 },
-  { id: 84, nome: "Testosterona Livre", preco: 40.0 },
-  { id: 85, nome: "Testosterona Total", preco: 70.0 },
-  { id: 86, nome: "TGO", preco: 15.0 },
-  { id: 87, nome: "TGP", preco: 15.0 },
-  { id: 88, nome: "Tipagem Sanguínea (ABO/RH)", preco: 20.0 },
-  { id: 89, nome: "Toxoplasmose IgG e IgM", preco: 60.0 },
-  { id: 90, nome: "Triglicarídeos", preco: 10.0 },
-  { id: 91, nome: "TSH", preco: 30.0 },
-  { id: 92, nome: "Urocultura ou Cultura de Urina", preco: 60.0 },
-  { id: 93, nome: "Ureia", preco: 10.0 },
-  { id: 94, nome: "Urina 1(eas)", preco: 10.0 },
-  { id: 95, nome: "VHS", preco: 10.0 },
-  { id: 96, nome: "Vitamina B12", preco: 50.0 },
-  { id: 97, nome: "Vitamina D", preco: 50.0 },
-  { id: 98, nome: "Vitamina D 25 OH", preco: 50.0 }
-];
-/* Campos clínicos (unidade, valor de referência, material, método) ficam em
-   branco por padrão — devem ser preenchidos pela equipe do laboratório na
-   aba "Exames", pois variam por método/equipamento e não devem ser
-   presumidos automaticamente pelo sistema. */
-const CATALOGO_INICIAL = CATALOGO_INICIAL_BASE.map(e => ({
-  ...e, unidade: "", referencia: "", material: "", metodo: ""
-}));
+/* CATÁLOGO */
+const CATALOGO_KEY = "omnilab_catalogo";
 
 function conectaCatalogo(){
   if(localStorage.getItem(CATALOGO_KEY) === null){
-    localStorage.setItem(CATALOGO_KEY, JSON.stringify(CATALOGO_INICIAL));
-    localStorage.setItem(CATALOGO_SEQ_KEY, String(CATALOGO_INICIAL.length + 1));
+    localStorage.setItem(CATALOGO_KEY, JSON.stringify([]));
   }
 }
 function listarCatalogo(){
   conectaCatalogo();
-  return JSON.parse(localStorage.getItem(CATALOGO_KEY)).sort((a,b)=> a.nome.localeCompare(b.nome, "pt-BR"));
+  return JSON.parse(localStorage.getItem(CATALOGO_KEY));
 }
-function salvarCatalogo(lista){ localStorage.setItem(CATALOGO_KEY, JSON.stringify(lista)); }
 function proximoIdCatalogo(){
-  conectaCatalogo();
-  const atual = parseInt(localStorage.getItem(CATALOGO_SEQ_KEY), 10);
-  localStorage.setItem(CATALOGO_SEQ_KEY, String(atual + 1));
-  return atual;
+  const maxId = cacheCatalogo.reduce((m, c) => Math.max(m, c.id || 0), 0);
+  return maxId + 1;
 }
-function cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo){
-  const lista = listarCatalogo();
-  lista.push({ id: proximoIdCatalogo(), nome, preco, unidade, referencia, material, metodo });
-  salvarCatalogo(lista);
-}
-function editarExameCatalogo(id, nome, preco, unidade, referencia, material, metodo){
-  const lista = listarCatalogo();
-  const idx = lista.findIndex(e => e.id === id);
-  if(idx !== -1){
-    lista[idx] = { id, nome, preco, unidade, referencia, material, metodo };
-    salvarCatalogo(lista);
+
+async function cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo){
+  const novoExame = { id: proximoIdCatalogo(), nome, preco, unidade, referencia, material, metodo };
+  cacheCatalogo.push(novoExame);
+  if (window.salvarExameCatalogoAsync) await window.salvarExameCatalogoAsync(novoExame);
+  else {
+    const lista = listarCatalogo();
+    lista.push(novoExame);
+    localStorage.setItem(CATALOGO_KEY, JSON.stringify(lista));
   }
 }
-function excluirExameCatalogo(id){
-  salvarCatalogo(listarCatalogo().filter(e => e.id !== id));
+
+async function editarExameCatalogo(id, nome, preco, unidade, referencia, material, metodo){
+  const idx = cacheCatalogo.findIndex(e => e.id === id);
+  if(idx !== -1){
+    cacheCatalogo[idx] = { id, nome, preco, unidade, referencia, material, metodo };
+    if (window.salvarExameCatalogoAsync) await window.salvarExameCatalogoAsync(cacheCatalogo[idx]);
+    else {
+      const lista = listarCatalogo();
+      const lIdx = lista.findIndex(e => e.id === id);
+      if(lIdx !== -1) lista[lIdx] = cacheCatalogo[idx];
+      localStorage.setItem(CATALOGO_KEY, JSON.stringify(lista));
+    }
+  }
 }
+
+async function excluirExameCatalogo(id){
+  cacheCatalogo = cacheCatalogo.filter(e => e.id !== id);
+  if (window.excluirExameCatalogoAsync) await window.excluirExameCatalogoAsync(id);
+  else localStorage.setItem(CATALOGO_KEY, JSON.stringify(listarCatalogo().filter(e => e.id !== id)));
+}
+
 function mapaCatalogo(){
   const m = {};
-  listarCatalogo().forEach(c => m[c.nome] = c);
+  cacheCatalogo.forEach(c => m[c.nome] = c);
   return m;
 }
-/* Mapa {nome: preco} usado pelo modal de atendimento e pela tela de início */
+
 function obterMapaExames(){
   const mapa = {};
-  listarCatalogo().forEach(e => mapa[e.nome] = e.preco);
+  cacheCatalogo.forEach(e => mapa[e.nome] = e.preco);
   return mapa;
 }
 
@@ -817,7 +1029,7 @@ function mostrarToast(texto){
   setTimeout(()=> t.classList.remove("mostrar"), 2200);
 }
 
-/* NAVEGAÇÃO ENTRE ABAS */
+/* NAVEGAÇÃO ABA */
 document.querySelectorAll("nav.tabs button").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("ativa"));
@@ -828,7 +1040,6 @@ document.querySelectorAll("nav.tabs button").forEach(btn=>{
   });
 });
 
-/* FILTRO DE PERÍODO (compartilhado entre Pacientes e Financeiro) */
 function alternarPersonalizado(contexto){
   const tipo = document.getElementById(`filtro-periodo-${contexto}`).value;
   document.getElementById(`personalizado-${contexto}`).style.display = (tipo === "personalizado") ? "flex" : "none";
@@ -864,23 +1075,21 @@ function filtrarPorPeriodo(visitas, contexto){
   return visitas;
 }
 
-/* INÍCIO */
+/* RENDERIZADORES */
+function nomeEquipeAtual(){
+  return (gestorLogado && gestorLogado.nome) || CONFIG.inicio.nomeLaboratorio;
+}
+
 function renderizarInicio(){
   const c = CONFIG.inicio;
   document.getElementById("cabecalho-nome").textContent = c.nomeLaboratorio;
   document.getElementById("inicio-nome").textContent = c.nomeLaboratorio;
   document.getElementById("inicio-slogan").textContent = c.slogan;
   document.getElementById("inicio-sobre").textContent = c.sobre;
-  document.getElementById("inicio-contato").innerHTML = `
-    <div class="linha-exame"><span>Horário de funcionamento</span><span>${c.horario}</span></div>
-    <div class="linha-exame"><span>Endereço</span><span>${c.endereco}</span></div>
-    <div class="linha-exame"><span>Telefone</span><span>${c.telefone}</span></div>
-    <div class="linha-exame"><span>WhatsApp</span><span>${CONFIG.dadosLegais["WhatsApp"]}</span></div>
-  `;
 
   const precos = document.getElementById("lista-precos");
   precos.innerHTML = "";
-  listarCatalogo().forEach(({nome, preco})=>{
+  cacheCatalogo.forEach(({nome, preco})=>{
     const div = document.createElement("div");
     div.className = "linha-exame";
     div.innerHTML = `<span><b>${nome}</b></span><span>${formatarMoeda(preco)}</span>`;
@@ -888,30 +1097,15 @@ function renderizarInicio(){
   });
 }
 
-/* SOBRE NÓS */
 function renderizarSobreNos(){
   const container = document.getElementById("sobrenos-conteudo");
   container.innerHTML = `
     <p class="texto-sobre">${CONFIG.sobreNos.texto}</p>
     <p class="texto-sobre-assinatura">${CONFIG.sobreNos.assinatura}</p>
-    <hr class="divisor">
-    <h3 class="subtitulo">Dados institucionais</h3>
   `;
-  const bloco = document.createElement("div");
-  for(const [rotulo, valor] of Object.entries(CONFIG.dadosLegais)){
-    const div = document.createElement("div");
-    div.className = "campo-perfil";
-    div.innerHTML = `<span class="rotulo">${rotulo}</span><span>${valor}</span>`;
-    bloco.appendChild(div);
-  }
-  container.appendChild(bloco);
 }
 
-/* =========================================================
-   ATENDIMENTOS — cadastrar / listar / editar / excluir
-   ========================================================= */
-/* Guarda os resultados já lançados (aba "Resultados") para não perdê-los
-   quando a lista de exames de um atendimento é editada na aba "Pacientes". */
+/* ATENDIMENTOS */
 let resultadosExistentes = {};
 let bloqueadoAtual = false;
 
@@ -949,7 +1143,7 @@ function atualizarTotalModal(){
 }
 
 function autoPreencherPorCpf(){
-  if(document.getElementById("modal-id").value) return; // só para atendimento novo
+  if(document.getElementById("modal-id").value) return;
   const cpf = document.getElementById("modal-cpf").value.trim();
   const aviso = document.getElementById("modal-paciente-info");
   if(!cpf){
@@ -957,7 +1151,7 @@ function autoPreencherPorCpf(){
     aviso.textContent = "Novo paciente — um ID será criado ao salvar.";
     return;
   }
-  const paciente = listarPacientes().find(p => p.cpf === cpf);
+  const paciente = cachePacientes.find(p => p.cpf === cpf);
   if(paciente){
     document.getElementById("modal-nome").value = paciente.nome || "";
     document.getElementById("modal-endereco").value = paciente.endereco || "";
@@ -974,15 +1168,53 @@ function autoPreencherPorCpf(){
   }
 }
 
-function abrirModalPaciente(id){
+function abrirModalEscolha(){
+  document.getElementById("modal-escolha-overlay").classList.add("aberto");
+}
+function fecharModalEscolha(){
+  document.getElementById("modal-escolha-overlay").classList.remove("aberto");
+}
+
+function abrirModalListaPacientes(){
+  document.getElementById("busca-lista-pacientes").value = "";
+  renderizarListaSelecaoPacientes();
+  document.getElementById("modal-lista-pacientes-overlay").classList.add("aberto");
+}
+function fecharModalListaPacientes(){
+  document.getElementById("modal-lista-pacientes-overlay").classList.remove("aberto");
+}
+function renderizarListaSelecaoPacientes(){
+  const termo = normalizarBusca(document.getElementById("busca-lista-pacientes").value);
+  const container = document.getElementById("lista-selecao-pacientes");
+  let lista = [...cachePacientes].sort((a,b)=> (a.nome||"").localeCompare(b.nome||"", "pt-BR"));
+  if(termo){
+    lista = lista.filter(p => normalizarBusca(p.nome).includes(termo) || normalizarBusca(p.cpf).includes(termo));
+  }
+  if(lista.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhum paciente cadastrado ainda.</div>`;
+    return;
+  }
+  container.innerHTML = lista.map(p => `
+    <div class="linha-exame" style="cursor:pointer;" onclick="selecionarPacienteExistente(${p.id})">
+      <span><b>${p.nome || "(sem nome)"}</b> <span class="badge-id">ID #${p.id}</span></span>
+      <span>${p.cpf || "-"}</span>
+    </div>`).join("");
+}
+function selecionarPacienteExistente(id){
+  fecharModalListaPacientes();
+  const paciente = cachePacientes.find(p => p.id === id);
+  abrirModalPaciente(null, paciente);
+}
+
+function abrirModalPaciente(id, pacientePreenchido){
   document.getElementById("modal-msg").innerHTML = "";
   document.getElementById("modal-id").value = id || "";
   resultadosExistentes = {};
   bloqueadoAtual = false;
 
   if(id){
-    const visita = listarVisitas().find(v => v.id === id);
-    const paciente = listarPacientes().find(p => p.id === visita.paciente_id) || {};
+    const visita = cacheVisitas.find(v => v.id === id);
+    const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
 
     document.getElementById("modal-titulo").textContent = "Editar atendimento";
     document.getElementById("modal-nome").value = paciente.nome || "";
@@ -1008,6 +1240,26 @@ function abrirModalPaciente(id){
     document.getElementById("modal-campos").style.opacity = bloqueadoAtual ? "0.5" : "1";
     document.querySelectorAll("#modal-campos input, #modal-campos select").forEach(el => el.disabled = bloqueadoAtual);
     document.getElementById("modal-btn-salvar").style.display = bloqueadoAtual ? "none" : "inline-block";
+
+  } else if(pacientePreenchido){
+    document.getElementById("modal-titulo").textContent = "Novo atendimento";
+    document.getElementById("modal-nome").value = pacientePreenchido.nome || "";
+    document.getElementById("modal-cpf").value = pacientePreenchido.cpf || "";
+    document.getElementById("modal-endereco").value = pacientePreenchido.endereco || "";
+    document.getElementById("modal-nascimento").value = pacientePreenchido.nascimento || "2000-01-01";
+    document.getElementById("modal-realizacao").value = new Date().toISOString().slice(0,10);
+    document.getElementById("modal-numero").value = pacientePreenchido.telefone || "";
+    document.getElementById("modal-convenio").value = pacientePreenchido.convenio || "Particular";
+    document.getElementById("modal-usuario").value = pacientePreenchido.usuario || "";
+    document.getElementById("modal-senha").value = pacientePreenchido.senha || "";
+    document.getElementById("modal-status").value = "criado";
+    document.getElementById("modal-paciente-vinculado").value = pacientePreenchido.id;
+    document.getElementById("modal-paciente-info").textContent = `Paciente já cadastrado — ID #${pacientePreenchido.id}. Dados preenchidos automaticamente.`;
+    montarCheckboxes([]);
+    document.getElementById("modal-bloqueado").style.display = "none";
+    document.getElementById("modal-campos").style.opacity = "1";
+    document.querySelectorAll("#modal-campos input, #modal-campos select").forEach(el => el.disabled = false);
+    document.getElementById("modal-btn-salvar").style.display = "inline-block";
 
   } else {
     document.getElementById("modal-titulo").textContent = "Novo atendimento";
@@ -1041,12 +1293,13 @@ function fecharModal(){
 function alertaConcluido(){
   mostrarToast("Exame concluído não pode ser editado.");
 }
-function abrirModalConclusao(id){
+
+async function abrirModalConclusao(id){
   const dataEntrega = prompt("Digite a data de entrega (AAAA-MM-DD):", new Date().toISOString().slice(0,10));
   if(!dataEntrega) return;
 
-  const visita = listarVisitas().find(v => v.id === id);
-  editarVisitaBD(visita.id, {
+  const visita = cacheVisitas.find(v => v.id === id);
+  await editarVisitaBD(visita.id, {
     paciente_id: visita.paciente_id,
     data_realizacao: visita.data_realizacao,
     itens: visita.itens,
@@ -1058,30 +1311,20 @@ function abrirModalConclusao(id){
   renderizarTudo();
 }
 
-function emitirRecibo(id){
-  const v = listarVisitas().find(x => x.id === id);
-  const p = listarPacientes().find(x => x.id === v.paciente_id) || {};
-  const lab = CONFIG.dadosLegais;
-  const catalogo = mapaCatalogo();
+function blocoCabecalhoPaciente(p, v){
+  return `
+    <p><b>ID do paciente:</b> #${p.id ?? "-"}</p>
+    <p><b>Paciente:</b> ${p.nome || ""}</p>
+    <p><b>CPF:</b> ${p.cpf || "-"}</p>
+    <p><b>Nascimento:</b> ${formatarData(p.nascimento)}</p>
+    <p><b>Convênio:</b> ${p.convenio || "Particular"}</p>
+    <p><b>Data de realização:</b> ${formatarData(v.data_realizacao)}</p>
+    ${v.data_entrega ? `<p><b>Data de entrega:</b> ${formatarData(v.data_entrega)}</p>` : ""}
+  `;
+}
 
-  const linhasResultados = v.itens.map(it => {
-    const c = catalogo[it.nome] || {};
-    return `
-      <tr>
-        <td>${it.nome}</td>
-        <td>${it.resultado || "Pendente"}</td>
-        <td>${c.unidade || "-"}</td>
-        <td>${c.referencia || "-"}</td>
-        <td>${c.material || "-"}</td>
-        <td>${c.metodo || "-"}</td>
-      </tr>`;
-  }).join("");
-
-  const blocoCredenciais = p.usuario
-    ? `<div class="creds"><b>Acesso aos resultados on-line:</b> usuário <b>${p.usuario}</b> / senha <b>${p.senha || "-"}</b><br>Recomendamos alterar a senha após o primeiro acesso.</div>`
-    : "";
-
-  const blocoAcessoOnline = CONFIG.portalUrl
+function blocoAcessoOnlineRecibo(mostrarCredenciais, p){
+  const qr = CONFIG.portalUrl
     ? `<div class="creds acesso-online">
          <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(CONFIG.portalUrl)}" alt="QR code para acessar seus resultados" width="130" height="130">
          <div>
@@ -1091,50 +1334,136 @@ function emitirRecibo(id){
          </div>
        </div>`
     : "";
+  const credenciais = (mostrarCredenciais && p.usuario)
+    ? `<div class="creds"><b>Login para acompanhar seu exame:</b> usuário <b>${p.usuario}</b> / senha <b>${p.senha || "-"}</b><br>Assim que o exame estiver pronto, use esse acesso para conferir o resultado.</div>`
+    : "";
+  return qr + credenciais;
+}
 
+const ESTILO_RECIBO = `
+  body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#17262d; }
+  table{ width:100%; border-collapse:collapse; margin-top:10px; font-size:0.85rem; }
+  th, td{ border:1px solid #cfe0e8; padding:6px 8px; text-align:left; }
+  th{ background:#eef5f8; }
+  .creds{ margin-top:18px; padding:10px 14px; background:#e5f6ec; border-left:3px solid #2f9e63; font-size:0.85rem; }
+  .creds.acesso-online{ display:flex; align-items:center; gap:16px; background:#e8f4fa; border-left-color:#1478a8; }
+  .creds.acesso-online img{ border:1px solid #cfe0e8; border-radius:8px; flex-shrink:0; }
+  .resultado-destaque{ font-weight:800; font-size:1.05rem; color:#0a3d5c; background:#e8f4fa; }
+`;
+
+function abrirJanelaImpressao(titulo, corpo){
   const html = `
-    <html><head><title>Recibo - ${p.nome || ""}</title>
-    <style>
-      body{ font-family: Arial, Helvetica, sans-serif; padding:24px; color:#17262d; }
-      table{ width:100%; border-collapse:collapse; margin-top:10px; font-size:0.85rem; }
-      th, td{ border:1px solid #cfe0e8; padding:6px 8px; text-align:left; }
-      th{ background:#eef5f8; }
-      .creds{ margin-top:18px; padding:10px 14px; background:#e5f6ec; border-left:3px solid #2f9e63; font-size:0.85rem; }
-      .creds.acesso-online{ display:flex; align-items:center; gap:16px; background:#e8f4fa; border-left-color:#1478a8; }
-      .creds.acesso-online img{ border:1px solid #cfe0e8; border-radius:8px; flex-shrink:0; }
-    </style>
+    <html><head><title>${titulo}</title>
+    <style>${ESTILO_RECIBO}</style>
     </head>
-    <body>
-      <h2>OmniLab</h2>
-      <p>${lab["Razão social"]}</p>
-      <p>${lab["Endereço"]} · ${lab["Telefone"]}</p>
-      <hr>
-      <p><b>ID do paciente:</b> #${p.id ?? "-"}</p>
-      <p><b>Paciente:</b> ${p.nome || ""}</p>
-      <p><b>CPF:</b> ${p.cpf || "-"}</p>
-      <p><b>Nascimento:</b> ${formatarData(p.nascimento)}</p>
-      <p><b>Convênio:</b> ${p.convenio || "Particular"}</p>
-      <p><b>Data de realização:</b> ${formatarData(v.data_realizacao)}</p>
-      <p><b>Data de entrega:</b> ${formatarData(v.data_entrega)}</p>
-      <table>
-        <thead><tr><th>Exame</th><th>Resultado</th><th>Unidade</th><th>Valor de referência</th><th>Material</th><th>Método</th></tr></thead>
-        <tbody>${linhasResultados}</tbody>
-      </table>
-      <p style="margin-top:14px;"><b>Valor total:</b> ${formatarMoeda(v.valor)}</p>
-      <hr>
-      ${blocoAcessoOnline}
-      ${blocoCredenciais}
-      <p style="margin-top:14px; font-size:0.8rem; color:#5c717a;">Recibo gerado em ${formatarData(new Date().toISOString().slice(0,10))}</p>
-    </body></html>
+    <body>${corpo}</body></html>
   `;
-
   const janela = window.open("", "_blank");
   janela.document.write(html);
   janela.document.close();
   janela.print();
 }
 
-function salvarModal(){
+/* Recibo de cadastro: entregue no dia do cadastro, com todos os dados
+   do atendimento e acesso ao portal, mas sem os resultados (ainda não existem). */
+function emitirReciboCadastro(id){
+  const v = cacheVisitas.find(x => x.id === id);
+  const p = cachePacientes.find(x => x.id === v.paciente_id) || {};
+
+  const linhasExames = v.itens.map(it => `<tr><td>${it.nome}</td><td>${formatarMoeda(it.preco)}</td></tr>`).join("");
+
+  const corpo = `
+    <h2>OmniLab</h2>
+    <p>${nomeEquipeAtual()}</p>
+    <hr>
+    ${blocoCabecalhoPaciente(p, v)}
+    <table>
+      <thead><tr><th>Exame</th><th>Preço</th></tr></thead>
+      <tbody>${linhasExames}</tbody>
+    </table>
+    <p style="margin-top:14px;"><b>Valor total:</b> ${formatarMoeda(v.valor)}</p>
+    <hr>
+    ${blocoAcessoOnlineRecibo(true, p)}
+    <p style="margin-top:14px; font-size:0.8rem; color:#5c717a;">Este recibo confirma o cadastro do exame. Os resultados ainda não estão disponíveis.</p>
+    <p style="margin-top:4px; font-size:0.8rem; color:#5c717a;">Recibo gerado em ${formatarData(new Date().toISOString().slice(0,10))}</p>
+  `;
+  abrirJanelaImpressao(`Recibo de cadastro - ${p.nome || ""}`, corpo);
+}
+
+/* Recibo de resultado: só disponível depois do exame concluído, com os
+   resultados em destaque, cabeçalho com os dados do paciente e assinatura. */
+function emitirReciboResultado(id){
+  const v = cacheVisitas.find(x => x.id === id);
+  const p = cachePacientes.find(x => x.id === v.paciente_id) || {};
+  const catalogo = mapaCatalogo();
+
+  const linhasResultados = v.itens.map(it => {
+    const c = catalogo[it.nome] || {};
+    return `
+      <tr>
+        <td>${it.nome}</td>
+        <td class="resultado-destaque">${it.resultado || "Pendente"}</td>
+        <td>${c.unidade || "-"}</td>
+        <td>${c.referencia || "-"}</td>
+        <td>${c.material || "-"}</td>
+        <td>${c.metodo || "-"}</td>
+      </tr>`;
+  }).join("");
+
+  const corpo = `
+    <h2>OmniLab</h2>
+    <p>${nomeEquipeAtual()} · Resultado de Exames</p>
+    <hr>
+    ${blocoCabecalhoPaciente(p, v)}
+    <table>
+      <thead><tr><th>Exame</th><th>Resultado</th><th>Unidade</th><th>Valor de referência</th><th>Material</th><th>Método</th></tr></thead>
+      <tbody>${linhasResultados}</tbody>
+    </table>
+    <hr>
+    ${blocoAcessoOnlineRecibo(false, p)}
+    <div style="margin-top:50px; text-align:center;">
+      <div style="border-top:1px solid #17262d; width:260px; margin:0 auto;"></div>
+      <p style="margin-top:6px; font-size:0.85rem;">Responsável Técnico</p>
+    </div>
+    <p style="margin-top:14px; font-size:0.8rem; color:#5c717a;">Recibo gerado em ${formatarData(new Date().toISOString().slice(0,10))}</p>
+  `;
+  abrirJanelaImpressao(`Resultado de exames - ${p.nome || ""}`, corpo);
+}
+
+/* Visualização em tela (sem imprimir) do paciente e dos resultados prontos */
+function abrirVisualizacao(id){
+  const v = cacheVisitas.find(x => x.id === id);
+  const p = cachePacientes.find(x => x.id === v.paciente_id) || {};
+  const catalogo = mapaCatalogo();
+
+  document.getElementById("visualizar-titulo").textContent = `${p.nome || "Paciente"} — Resultados`;
+  document.getElementById("visualizar-conteudo").innerHTML = `
+    <div class="campo-perfil"><span class="rotulo">ID do paciente</span><span>#${p.id ?? "-"}</span></div>
+    <div class="campo-perfil"><span class="rotulo">CPF</span><span>${p.cpf || "-"}</span></div>
+    <div class="campo-perfil"><span class="rotulo">Nascimento</span><span>${formatarData(p.nascimento)}</span></div>
+    <div class="campo-perfil"><span class="rotulo">Convênio</span><span>${p.convenio || "Particular"}</span></div>
+    <div class="campo-perfil"><span class="rotulo">Realização</span><span>${formatarData(v.data_realizacao)}</span></div>
+    ${v.data_entrega ? `<div class="campo-perfil"><span class="rotulo">Entrega</span><span>${formatarData(v.data_entrega)}</span></div>` : ""}
+    <h3 class="subtitulo">Resultados</h3>
+    <table class="tabela-resultados">
+      <thead><tr><th>Exame</th><th>Resultado</th><th>Unidade</th><th>Referência</th></tr></thead>
+      <tbody>
+        ${v.itens.map(it => {
+          const c = catalogo[it.nome] || {};
+          return `<tr><td>${it.nome}</td><td class="resultado-destaque">${it.resultado || "Pendente"}</td><td>${c.unidade || "-"}</td><td>${c.referencia || "-"}</td></tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+  document.getElementById("visualizar-btn-imprimir").setAttribute("onclick", `emitirReciboResultado(${id})`);
+  document.getElementById("modal-visualizar-overlay").classList.add("aberto");
+}
+function fecharVisualizacao(){
+  document.getElementById("modal-visualizar-overlay").classList.remove("aberto");
+}
+
+
+async function salvarModal(){
   const idVisita = document.getElementById("modal-id").value;
   const nome = document.getElementById("modal-nome").value.trim();
   const cpf = document.getElementById("modal-cpf").value.trim();
@@ -1159,7 +1488,7 @@ function salvarModal(){
   }
 
   const idVinculado = document.getElementById("modal-paciente-vinculado").value;
-  const pacienteId = localizarOuCriarPaciente(
+  const pacienteId = await localizarOuCriarPaciente(
     { nome, cpf, endereco, nascimento, telefone, convenio, usuario, senha },
     idVinculado ? parseInt(idVinculado, 10) : null
   );
@@ -1178,12 +1507,12 @@ function salvarModal(){
   };
 
   if(idVisita){
-    const anterior = listarVisitas().find(v => v.id === parseInt(idVisita, 10));
+    const anterior = cacheVisitas.find(v => v.id === parseInt(idVisita, 10));
     dados.data_entrega = anterior ? anterior.data_entrega : null;
-    editarVisitaBD(parseInt(idVisita, 10), dados);
+    await editarVisitaBD(parseInt(idVisita, 10), dados);
     mostrarToast("Atendimento atualizado com sucesso!");
   } else {
-    cadastrarVisitaBD(dados);
+    await cadastrarVisitaBD(dados);
     mostrarToast("Atendimento cadastrado com sucesso!");
   }
 
@@ -1191,11 +1520,11 @@ function salvarModal(){
   renderizarTudo();
 }
 
-function excluirExame(id){
-  const visita = listarVisitas().find(v => v.id === id);
-  const paciente = listarPacientes().find(p => p.id === visita.paciente_id) || {};
+async function excluirExame(id){
+  const visita = cacheVisitas.find(v => v.id === id);
+  const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
   if(!confirm(`Excluir o atendimento de ${paciente.nome || "paciente"}? Esta ação não pode ser desfeita.`)) return;
-  excluirVisitaBD(id);
+  await excluirVisitaBD(id);
   mostrarToast("Atendimento excluído com sucesso!");
   renderizarTudo();
 }
@@ -1205,7 +1534,7 @@ function renderizarListaPacientes(){
   const termoBusca = normalizarBusca(document.getElementById("busca-pacientes")?.value);
   const pacientes = mapaPacientes();
 
-  let filtrados = filtrarPorPeriodo(listarVisitas(), "pacientes");
+  let filtrados = filtrarPorPeriodo(cacheVisitas, "pacientes");
 
   if(termoBusca){
     filtrados = filtrados.filter(v=>{
@@ -1229,9 +1558,16 @@ function renderizarListaPacientes(){
     const btnEditar = bloqueado
       ? `<button class="icone desabilitado" title="Exame concluído não pode ser editado" onclick="alertaConcluido()">✏️</button>`
       : `<button class="icone" title="Editar" onclick="abrirModalPaciente(${v.id})">✏️</button>`;
-    const btnConcluirOuRecibo = bloqueado
-      ? `<button class="icone" title="Emitir recibo" onclick="emitirRecibo(${v.id})">🧾</button>`
+    const btnConcluir = bloqueado
+      ? ""
       : `<button class="icone" title="Concluir exame" onclick="abrirModalConclusao(${v.id})">✅</button>`;
+    const btnVisualizar = bloqueado
+      ? `<button class="icone" title="Visualizar resultados" onclick="abrirVisualizacao(${v.id})">👁️</button>`
+      : "";
+    const btnReciboResultado = bloqueado
+      ? `<button class="icone" title="Recibo de resultado" onclick="emitirReciboResultado(${v.id})">📄</button>`
+      : "";
+    const btnReciboCadastro = `<button class="icone" title="Recibo de cadastro" onclick="emitirReciboCadastro(${v.id})">🧾</button>`;
     const entregaTexto = v.data_entrega ? ` · Entrega: ${formatarData(v.data_entrega)}` : "";
     const telefoneTexto = p.telefone ? ` · Tel.: ${p.telefone}` : "";
     const nomesExames = v.itens.map(it => it.nome).join(", ");
@@ -1244,19 +1580,20 @@ function renderizarListaPacientes(){
       <div class="exame-valor">${formatarMoeda(v.valor)}</div>
       <div class="exame-acoes">
         ${btnEditar}
-        ${btnConcluirOuRecibo}
+        ${btnConcluir}
+        ${btnVisualizar}
+        ${btnReciboResultado}
+        ${btnReciboCadastro}
         <button class="icone excluir" title="Excluir" onclick="excluirExame(${v.id})">🗑️</button>
       </div>
     </div>`;
   }).join("");
 }
 
-/* =========================================================
-   RESULTADOS — lançar/editar os resultados de cada exame realizado
-   ========================================================= */
+/* RESULTADOS */
 function abrirModalResultados(id){
-  const visita = listarVisitas().find(v => v.id === id);
-  const paciente = listarPacientes().find(p => p.id === visita.paciente_id) || {};
+  const visita = cacheVisitas.find(v => v.id === id);
+  const paciente = cachePacientes.find(p => p.id === visita.paciente_id) || {};
 
   document.getElementById("modal-resultado-msg").innerHTML = "";
   document.getElementById("modal-resultado-visita-id").value = id;
@@ -1290,9 +1627,9 @@ function fecharModalResultado(){
   document.getElementById("modal-resultado-overlay").classList.remove("aberto");
 }
 
-function salvarResultados(){
+async function salvarResultados(){
   const id = parseInt(document.getElementById("modal-resultado-visita-id").value, 10);
-  const visita = listarVisitas().find(v => v.id === id);
+  const visita = cacheVisitas.find(v => v.id === id);
   const inputs = Array.from(document.querySelectorAll("#modal-resultado-lista input"));
 
   const itensAtualizados = visita.itens.map(it => {
@@ -1300,7 +1637,7 @@ function salvarResultados(){
     return { ...it, resultado: input ? input.value.trim() : (it.resultado || "") };
   });
 
-  editarVisitaBD(id, {
+  await editarVisitaBD(id, {
     paciente_id: visita.paciente_id,
     data_realizacao: visita.data_realizacao,
     itens: itensAtualizados,
@@ -1319,7 +1656,7 @@ function renderizarResultados(){
   const termoBusca = normalizarBusca(document.getElementById("busca-resultados")?.value);
   const pacientes = mapaPacientes();
 
-  let filtrados = filtrarPorPeriodo(listarVisitas(), "resultados");
+  let filtrados = filtrarPorPeriodo(cacheVisitas, "resultados");
 
   if(termoBusca){
     filtrados = filtrados.filter(v=>{
@@ -1351,21 +1688,101 @@ function renderizarResultados(){
         <div class="exame-detalhe">${resumo}</div>
       </div>
       <div class="exame-acoes">
+        ${v.status === "concluido" ? `<button class="icone" title="Visualizar" onclick="abrirVisualizacao(${v.id})">👁️</button>` : ""}
         <button class="icone" title="Lançar/editar resultados" onclick="abrirModalResultados(${v.id})">📝</button>
       </div>
     </div>`;
   }).join("");
 }
 
-/* =========================================================
-   EXAMES (CATÁLOGO) — cadastrar / listar / editar / excluir
-   ========================================================= */
+/* EQUIPES (somente gestor administrador) */
+function slugTenant(usuario){
+  const base = (usuario || "").toString().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/(^-+|-+$)/g, "");
+  return base || ("equipe-" + Date.now());
+}
+
+async function renderizarEquipes(){
+  if(!gestorLogado || !gestorLogado.superAdmin) return;
+  const container = document.getElementById("lista-equipes");
+  if(!container || !window.listarGestoresAsync) return;
+
+  const gestores = await window.listarGestoresAsync();
+  if(gestores.length === 0){
+    container.innerHTML = `<div class="msg info">Nenhuma equipe cadastrada.</div>`;
+    return;
+  }
+
+  container.innerHTML = gestores.map(g => {
+    const btnExcluir = g.superAdmin
+      ? ""
+      : `<button class="icone excluir" title="Excluir equipe" onclick="excluirEquipe('${g.docId}','${g.tenantId}')">🗑️</button>`;
+    return `
+    <div class="exame-card">
+      <div>
+        <div class="exame-nome">${g.nome || g.usuario} ${g.superAdmin ? '<span class="badge status-concluido">Administrador</span>' : ''}</div>
+        <div class="exame-detalhe">Usuário de login: ${g.usuario} · Código da equipe: ${g.tenantId}</div>
+      </div>
+      <div class="exame-acoes">${btnExcluir}</div>
+    </div>`;
+  }).join("");
+}
+
+function abrirModalEquipe(){
+  document.getElementById("modal-equipe-msg").innerHTML = "";
+  document.getElementById("modal-equipe-nome").value = "";
+  document.getElementById("modal-equipe-usuario").value = "";
+  document.getElementById("modal-equipe-senha").value = "";
+  document.getElementById("modal-equipe-overlay").classList.add("aberto");
+}
+
+function fecharModalEquipe(){
+  document.getElementById("modal-equipe-overlay").classList.remove("aberto");
+}
+
+async function salvarEquipe(){
+  const nome = document.getElementById("modal-equipe-nome").value.trim();
+  const usuario = document.getElementById("modal-equipe-usuario").value.trim();
+  const senha = document.getElementById("modal-equipe-senha").value;
+  const msg = document.getElementById("modal-equipe-msg");
+
+  if(!nome || !usuario || !senha){
+    msg.innerHTML = `<div class="msg aviso">Preencha nome, usuário e senha.</div>`;
+    return;
+  }
+
+  const existente = await window.buscarGestorAsync(usuario);
+  if(existente){
+    msg.innerHTML = `<div class="msg aviso">Já existe uma equipe com esse usuário.</div>`;
+    return;
+  }
+
+  const tenantId = slugTenant(usuario);
+  await window.criarGestorAsync({
+    usuario, senha, nome, tenantId, superAdmin: false, criadoEm: new Date().toISOString()
+  });
+
+  mostrarToast("Equipe criada com sucesso!");
+  fecharModalEquipe();
+  renderizarEquipes();
+}
+
+async function excluirEquipe(docId, tenantId){
+  if(!confirm("Excluir esta equipe? Todos os pacientes, exames e resultados dela serão apagados permanentemente. Esta ação não pode ser desfeita.")) return;
+  await window.excluirTenantAsync(tenantId);
+  await window.excluirGestorAsync(docId);
+  mostrarToast("Equipe excluída.");
+  renderizarEquipes();
+}
+
+/* EXAMES CATÁLOGO */
 function abrirModalExameCatalogo(id){
   document.getElementById("modal-catalogo-msg").innerHTML = "";
   document.getElementById("modal-catalogo-id").value = id || "";
 
   if(id){
-    const exame = listarCatalogo().find(e => e.id === id);
+    const exame = cacheCatalogo.find(e => e.id === id);
     document.getElementById("modal-catalogo-titulo").textContent = "Editar exame";
     document.getElementById("modal-catalogo-nome").value = exame.nome;
     document.getElementById("modal-catalogo-preco").value = exame.preco;
@@ -1390,7 +1807,7 @@ function fecharModalCatalogo(){
   document.getElementById("modal-catalogo-overlay").classList.remove("aberto");
 }
 
-function salvarModalCatalogo(){
+async function salvarModalCatalogo(){
   const id = document.getElementById("modal-catalogo-id").value;
   const nome = document.getElementById("modal-catalogo-nome").value.trim();
   const preco = parseFloat(document.getElementById("modal-catalogo-preco").value);
@@ -1409,10 +1826,10 @@ function salvarModalCatalogo(){
   }
 
   if(id){
-    editarExameCatalogo(parseInt(id,10), nome, preco, unidade, referencia, material, metodo);
+    await editarExameCatalogo(parseInt(id,10), nome, preco, unidade, referencia, material, metodo);
     mostrarToast("Exame editado com sucesso!");
   } else {
-    cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo);
+    await cadastrarExameCatalogo(nome, preco, unidade, referencia, material, metodo);
     mostrarToast("Exame cadastrado com sucesso!");
   }
 
@@ -1420,10 +1837,10 @@ function salvarModalCatalogo(){
   renderizarTudo();
 }
 
-function excluirExameDoCatalogo(id){
-  const exame = listarCatalogo().find(e => e.id === id);
+async function excluirExameDoCatalogo(id){
+  const exame = cacheCatalogo.find(e => e.id === id);
   if(!confirm(`Excluir o exame "${exame.nome}" do catálogo? Esta ação não pode ser desfeita.`)) return;
-  excluirExameCatalogo(id);
+  await excluirExameCatalogo(id);
   mostrarToast("Exame excluído do catálogo!");
   renderizarTudo();
 }
@@ -1432,7 +1849,7 @@ function renderizarCatalogo(){
   const container = document.getElementById("lista-catalogo");
   const termoBusca = normalizarBusca(document.getElementById("busca-exames")?.value);
 
-  let filtrados = listarCatalogo();
+  let filtrados = cacheCatalogo;
   if(termoBusca){
     filtrados = filtrados.filter(e => normalizarBusca(e.nome).includes(termoBusca));
   }
@@ -1492,7 +1909,7 @@ function agruparExames(visitas, tipo){
 
 function renderizarFinanceiro(){
   const container = document.getElementById("financeiro-conteudo");
-  const filtrados = filtrarPorPeriodo(listarVisitas(), "financeiro");
+  const filtrados = filtrarPorPeriodo(cacheVisitas, "financeiro");
 
   if(filtrados.length === 0){
     container.innerHTML = `<div class="msg info">Nenhum exame encontrado para o período selecionado.</div>`;
@@ -1526,12 +1943,10 @@ function renderizarFinanceiro(){
   container.innerHTML = html;
 }
 
-/* =========================================================
-   PORTAL DO PACIENTE
-   ========================================================= */
+/* PORTAL PACIENTE */
 function renderizarPortalPaciente(paciente){
   const container = document.getElementById("portal-lista-visitas");
-  const minhas = listarVisitas()
+  const minhas = cacheVisitas
     .filter(v => v.paciente_id === paciente.id)
     .sort((a,b)=> b.data_realizacao.localeCompare(a.data_realizacao));
 
@@ -1548,7 +1963,7 @@ function renderizarPortalPaciente(paciente){
       return `<tr><td>${it.nome}</td><td>${resultado}</td><td>${c.unidade || "-"}</td><td>${c.referencia || "-"}</td></tr>`;
     }).join("");
     const btnRecibo = v.status === "concluido"
-      ? `<button class="secundario" onclick="emitirRecibo(${v.id})">🧾 Ver recibo</button>`
+      ? `<button class="secundario" onclick="emitirReciboResultado(${v.id})">🧾 Ver recibo</button>`
       : "";
     return `
       <div class="visita-card">
@@ -1562,7 +1977,6 @@ function renderizarPortalPaciente(paciente){
   }).join("");
 }
 
-/* ORQUESTRAÇÃO */
 function renderizarTudo(){
   renderizarInicio();
   renderizarSobreNos();
@@ -1570,6 +1984,7 @@ function renderizarTudo(){
   renderizarResultados();
   renderizarCatalogo();
   renderizarFinanceiro();
+  renderizarEquipes();
 }
 
 document.getElementById("modal-overlay").addEventListener("click", (ev)=>{
@@ -1581,37 +1996,19 @@ document.getElementById("modal-catalogo-overlay").addEventListener("click", (ev)
 document.getElementById("modal-resultado-overlay").addEventListener("click", (ev)=>{
   if(ev.target.id === "modal-resultado-overlay") fecharModalResultado();
 });
+document.getElementById("modal-equipe-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-equipe-overlay") fecharModalEquipe();
+});
+document.getElementById("modal-escolha-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-escolha-overlay") fecharModalEscolha();
+});
+document.getElementById("modal-lista-pacientes-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-lista-pacientes-overlay") fecharModalListaPacientes();
+});
+document.getElementById("modal-visualizar-overlay").addEventListener("click", (ev)=>{
+  if(ev.target.id === "modal-visualizar-overlay") fecharVisualizacao();
+});
 </script>
 
-<!-- Firebase App e Serviços via CDN (ES Modules) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { 
-    getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch 
-  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-  import { 
-    getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged 
-  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-  // SUAS CONFIGURAÇÕES DO CONSOLE DO FIREBASE
-  const firebaseConfig = {
-    apiKey: "SUA_API_KEY",
-    authDomain: "seu-projeto.firebaseapp.com",
-    projectId: "seu-projeto-id",
-    storageBucket: "seu-projeto.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:abcdef"
-  };
-
-  // Inicializar Firebase
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
-
-  // Tornar instâncias acessíveis globalmente
-  window.db = db;
-  window.auth = auth;
-  window.fs = { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, writeBatch };
-</script>
 </body>
 </html>
