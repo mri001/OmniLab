@@ -6,6 +6,19 @@
 <link rel="stylesheet" href="style.css">
 <title>Sistema OmniLab</title>
 
+<!-- ===== ESTILOS NOVOS (apresentação do Início e rodapé) ===== -->
+<style>
+  .destaques{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:16px; }
+  .destaque{ background:#e8f4fa; border-left:3px solid #1478a8; border-radius:6px; padding:10px 12px; }
+  .destaque b{ display:block; color:#0a3d5c; margin-bottom:4px; }
+  .destaque span{ font-size:0.85rem; color:#5c717a; }
+  #inicio-sobre p{ margin:0 0 10px 0; }
+  .rodape{ text-align:center; font-size:0.78rem; color:#5c717a; padding:18px 12px; border-top:1px solid #cfe0e8; margin-top:30px; }
+  .rodape p{ margin:3px 0; }
+  .rodape a{ color:#1478a8; text-decoration:none; }
+  .rodape a:hover{ text-decoration:underline; }
+</style>
+
 <!-- ===== FIREBASE SDK E CONFIGURAÇÃO ÚNICA ===== -->
 <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -295,7 +308,8 @@
     <div class="card">
       <h2 class="titulo-aba" id="inicio-nome"></h2>
       <div id="inicio-slogan" style="color:var(--azul); font-size:0.95rem; margin-top:2px;"></div>
-      <p id="inicio-sobre" style="line-height:1.6; font-size:0.93rem;"></p>
+      <div id="inicio-sobre" style="line-height:1.6; font-size:0.93rem; margin-top:10px;"></div>
+      <div id="inicio-destaques" class="destaques"></div>
     </div>
     <div class="card">
       <h2 class="titulo-aba">Tabela de Exames</h2>
@@ -642,6 +656,18 @@
   </div>
 </div>
 
+<!-- ===== RODAPÉ (aparece em todas as telas) ===== -->
+<footer class="rodape">
+  <p><b>OmniLab</b> · Sistema de gestão para laboratórios parceiros · Codó – MA</p>
+  <p>Desenvolvido por Iann Gustavo Borges Guimarães</p>
+  <p>
+    <a href="mailto:ianngustavo903@gmail.com">ianngustavo903@gmail.com</a> ·
+    <a href="https://wa.me/5599999538077" target="_blank" rel="noopener">WhatsApp (99) 99953-8077</a>
+  </p>
+  <p>Os dados dos pacientes são de responsabilidade de cada laboratório.</p>
+  <p>© 2026 OmniLab. Todos os direitos reservados.</p>
+</footer>
+
 <script>
 /* =========================================================
    LOGIN — equipe e paciente com Firestore/Cache
@@ -823,13 +849,26 @@ document.addEventListener("DOMContentLoaded", async ()=>{
 const CONFIG = {
   inicio: {
     nomeLaboratorio: "OmniLab",
-    slogan: "Cuidando da sua saúde com precisão, agilidade e confiança",
-    sobre: "Rede de laboratórios parceiros trazendo qualidade, saúde e bons custos para a população.",
+    slogan: "Um sistema para todos os laboratórios",
+    apresentacao: [
+      "A OmniLab é um sistema online que ajuda laboratórios a organizar o dia a dia: cadastro de pacientes, exames, resultados e controle financeiro, tudo em um só lugar.",
+      "O paciente também tem o seu espaço: com usuário e senha, ele consulta o resultado de casa, pelo portal ou pelo QR code do recibo."
+    ],
+    destaques: [
+      { titulo: "Tudo em um só lugar", texto: "Pacientes, exames, resultados e financeiro organizados sem papelada." },
+      { titulo: "Cada laboratório no seu espaço", texto: "Cada equipe enxerga apenas os próprios pacientes e exames." },
+      { titulo: "Resultado na palma da mão", texto: "O paciente acompanha o exame pelo celular, quando estiver concluído." }
+    ]
   },
   portalUrl: "https://mri001.github.io/OmniLab/",
   sobreNos: {
-    texto: "A OmniLab nasceu da vontade de levar exames laboratoriais de confiança a mais famílias, unindo anos de experiência clínica a uma forma simples e direta de atender cada paciente. O sistema foi criado para que qualquer laboratório parceiro possa gerenciar pacientes, exames e resultados de forma organizada, mantendo cada equipe com seus próprios dados, isolados e seguros.",
-    assinatura: "Fundado por Iann Gustavo Borges Guimarães"
+    paragrafos: [
+      "Tudo começou com um pedido simples: meu pai, que tem um laboratório aqui em Codó, precisava de um site para organizar pacientes, exames e resultados. Eu estava aprendendo a programar e aceitei o desafio.",
+      "Com o tempo, conforme eu estudava e aprendia mais, o sistema foi crescendo: catálogo de exames, lançamento de resultados, recibos com QR code, relatório financeiro e um portal para o paciente. Quando ficou bom o bastante, meu pai disse que dava para indicar para outros laboratórios da cidade.",
+      "Foi aí que veio o nome. <b>\"Omni\" significa \"todos\"</b>, e a ideia é essa: um sistema que todos os laboratórios possam usar, cada um com seu espaço, seus pacientes e seus dados separados dos demais.",
+      "A OmniLab nasceu em Codó, está sempre em evolução e melhora a cada laboratório que a usa. Sugestões e críticas são muito bem-vindas."
+    ],
+    assinatura: "Iann Gustavo Borges Guimarães · Desenvolvedor e fundador"
   }
 };
 
@@ -1085,7 +1124,10 @@ function renderizarInicio(){
   document.getElementById("cabecalho-nome").textContent = c.nomeLaboratorio;
   document.getElementById("inicio-nome").textContent = c.nomeLaboratorio;
   document.getElementById("inicio-slogan").textContent = c.slogan;
-  document.getElementById("inicio-sobre").textContent = c.sobre;
+  document.getElementById("inicio-sobre").innerHTML =
+    c.apresentacao.map(p => `<p>${p}</p>`).join("");
+  document.getElementById("inicio-destaques").innerHTML =
+    c.destaques.map(d => `<div class="destaque"><b>${d.titulo}</b><span>${d.texto}</span></div>`).join("");
 
   const precos = document.getElementById("lista-precos");
   precos.innerHTML = "";
@@ -1099,10 +1141,9 @@ function renderizarInicio(){
 
 function renderizarSobreNos(){
   const container = document.getElementById("sobrenos-conteudo");
-  container.innerHTML = `
-    <p class="texto-sobre">${CONFIG.sobreNos.texto}</p>
-    <p class="texto-sobre-assinatura">${CONFIG.sobreNos.assinatura}</p>
-  `;
+  container.innerHTML =
+    CONFIG.sobreNos.paragrafos.map(p => `<p class="texto-sobre">${p}</p>`).join("") +
+    `<p class="texto-sobre-assinatura">${CONFIG.sobreNos.assinatura}</p>`;
 }
 
 /* ATENDIMENTOS */
